@@ -8,4 +8,5 @@ Hello, I'm HelloBug0.
 
 ## QUIC
   - [连接迁移基本说明](https://hellobug0.github.io/quic/%E8%BF%9E%E6%8E%A5%E8%BF%81%E7%A7%BB%E5%9F%BA%E6%9C%AC%E8%AF%B4%E6%98%8E)
+  - [连接迁移补充说明](https://hellobug0.github.io/quic/%E8%BF%9E%E6%8E%A5%E8%BF%81%E7%A7%BB%E8%A1%A5%E5%85%85%E8%AF%B4%E6%98%8E)
     
