@@ -7,6 +7,5 @@ Hello, I'm HelloBug0.
   - [TIME_WAIT回收](https://hellobug0.github.io/tcp/TIME_WAIT%E5%9B%9E%E6%94%B6%E9%97%AE%E9%A2%98)
 
 ## QUIC
-  ### 连接迁移
-    - [基本说明]()
+  - [连接迁移基本说明]()
     
