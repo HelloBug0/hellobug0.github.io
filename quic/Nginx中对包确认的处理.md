@@ -31,13 +31,13 @@
 ## 2 确认收到的数据包
 在调用函数 `ngx_quic_output` 发送数据包时，在每个数据包号空间中调用 `ngx_quic_generate_ack` 函数，在该函数中判断是否需要发送ACK帧。
 
-### 发送ACK帧的条件
-以下三个条件同时满足，则等待一段时间再发送ACK帧
+### 2.1 发送ACK帧的条件
+以下三个条件同时满足，则等待一段时间再发送ACK帧，否则在当前数据包中发送ACK帧。
 1. 没有要发送的帧
 2. ctx->send_ack小于2
 3. 和上一次发送ACK帧的时间间隔小于传输层参数max_ack_delay的取值
 
-### ctx->send_ack取值变化
+### 2.2 ctx->send_ack取值变化
 `ngx_quic_ack_packet` 中设置 `ctx->send_ack` 的取值，如下：
 - 收到需要确认的数据包，`ctx->send_ack++`
 - 收到乱序的数据包，`ctx->send_ack = 2`
