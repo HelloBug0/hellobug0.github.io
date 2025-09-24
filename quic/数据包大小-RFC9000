@@ -1,0 +1,54 @@
+## 1 前置说明
+物理链路上传输的完整数据单元叫做“帧”，包括帧头、载荷、帧尾。
+每种数据链路层能够传输的帧的大小不同，这里说的帧通常指帧中的载荷的大小不同，能够传输的最大载荷长度，称作MTU（Maximum Transmission Unit），即最大传输单元。
+
+一条网络路径中，可能是由多种物理链路连接起来的，那这条网络路径的MTU，取决于最小的MTU（木桶效应），最小的MTU，称为PMTU（Path Maximum Transmission Unit），即路径最大传输单元/路径MTU。
+
+PMTUD（Path Maximum Transmission Unit Discovery）和DPLPMTUD（Datagram Packetization Layer PMTUD）是发现PMTU大小的两种实现机制。
+
+相比PMTUD，DPLPMTUD不依赖ICMP消息，是一种更健壮的PMTU探测机制。
+
+**PMTUD过程：**
+端点最初是不知道PMTU是多少的，通过发送当前数据链路层上MTU大小的帧来探测路径MTU，IP包头中设置DF（Don't Fragment）禁止分片标记（IPv4网络中），当中间设备转发IP数据包时，发现数据包太大，需要分片，但是设置了禁止分片标记，回一个包含需要分片的错误信息的ICMP包，ICMP包中包含下一个MTU的大小。
+PMTUD有一个缺陷，如果ICMP包被防火墙等中间设备拦截，导致ICMP无法返回发送端，发送端也就无法知道PMTU到底是多少（ICMP黑洞）。
+注意IPv4和IPv6网络中的ICMP的类型不同，但是提供的信息相似。
+
+**DPLPMTUD过程：**
+应用层（UDP上直接是应用层）或者分组层（UDP上是QUIC，QUIC上是应用层，分组层即QUIC层）负责发送大于MTU的探测包，然后根据探测包的应答或超时机制确定是否丢包判断PMTU的大小。
+
+**缩写和全称**
+MTU（Maximum Transmission Unit）最大传输单元
+PMTU（Path Maximum Transmission Unit）路径最大传输单元——路径MTU
+PMTUD（Path Maximum Transmission Unit Discovery）路径最大传输单元发现——路径MTU发现
+DPLPMTUD（Datagram Packetization Layer PMTUD）数据包分组层路径最大传输单元发现——数据包分组层路径MTU发现
+
+**什么是ICMP黑洞？**
+实际网络中，ICMP消息可能被防火墙拦截等情况，导致ICMP无法返回发送端，这种情况叫ICMP黑洞。
+
+**TCP/IP分层中的数据单元名称**
+|TCP/IP分层|数据单元名称|说明|
+| --- | --- | --- |
+| 应用程 | 消息、数据 | 应用层数据 |
+| 传输层 | 段 | TCP段 |
+| | 数据报 | UDP数据报 |
+| 网络层 | 包、分组 | IP包、IP数据包、IP分组 |
+| 数据链路层 | 帧 | 以太网帧，包含帧头、载荷和帧尾 |
+| 物理层 | 比特 | 转换为光电信号传播 |
+
+## 2 数据报尺寸（RFC9000 第9章 ）
+- 一条网络路径使用单个UDP数据报发送的最大UDP载荷大小称为最大数据报尺寸
+- 一条网络路径的最大数据报尺寸至少为1200字节（1280字节是IPv6数据报的最小尺寸，1200是参考了这个值减去IP头部和UDP头部之后一个数值），才可以使用QUIC协议
+- 端点在不知道网络路径的最大数据报尺寸之前，发送超过1200字节的数据，可能会丢包
+- UDP数据报必须不在IP层被分段，在IPv4网络中，必须尽可能设置不要分段标志方式数据报分段（端点在处理UDP数据报时，如果发现QUIC数据包不完整，通常会丢弃这个包）。
+- 传输层参数 `max_udp_payload_size` 限制端点传输的UDP载荷的大小
+- 如果端点收到的UDP载荷不满足最大大小限制，端点一定不能关闭连接，但可以丢弃这个包
+- 端点发送的初始数据包所在的UDP载荷的大小必须大于等于1200字节，可以通过填充帧或合并数据包的方式扩大UDP载荷使其满足大小要求
+- 如果端点收到的UDP载荷的大小小于1200字节，可以丢弃这个包或者发送一个错误码为PROTOCOL_VIOLATION的连接关闭帧来关闭连接
+- PMTU指IP数据包的最大尺寸，包括IP头部、UDP头部和UDP载荷
+
+- 端点可以可用PMTUD机制也可以使用DPLPMTUD机制探测PMTU的大小
+- 使用PMTUD探测PMTU时，如果端点收到的ICMP消息宣称PMTU已经降低到1200字节以下，终端必须忽略该ICMP包
+- 使用PMTUD探测PMTU时，终端必须不基于ICMP消息提高PMTU
+- 使用PMTUD探测PMTU时，端点必须对ICMP包进行验证，根据ICMP包中携带的QUIC数据包，验证其中的连接ID等
+- PMTU探测包的丢失不应该触发拥塞控制，因为有可能是MTU限制导致的丢包
+- 构建PMTU探测包的方法之一：探测包中依次包含一个长包头和一个短包头的数据包，如果可以到达对端，则对端会对短包头回复ACK，如果无法到达对端，则ICMP中会引用长包头的信息，方便端点根据长包头中的连接ID等信息进行验证
