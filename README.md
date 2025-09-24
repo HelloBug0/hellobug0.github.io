@@ -7,10 +7,11 @@ Hello, I'm HelloBug0.
   - [TIME_WAIT回收](https://hellobug0.github.io/tcp/TIME_WAIT%E5%9B%9E%E6%94%B6%E9%97%AE%E9%A2%98)
 
 ## QUIC
-  - [连接迁移基本说明](https://hellobug0.github.io/quic/%E8%BF%9E%E6%8E%A5%E8%BF%81%E7%A7%BB%E5%9F%BA%E6%9C%AC%E8%AF%B4%E6%98%8E)
+  - [连接迁移说明-RFC9000](https://hellobug0.github.io/quic/%E8%BF%9E%E6%8E%A5%E8%BF%81%E7%A7%BB%E8%AF%B4%E6%98%8E-RFC9000)
   - [连接迁移补充说明](https://hellobug0.github.io/quic/%E8%BF%9E%E6%8E%A5%E8%BF%81%E7%A7%BB%E8%A1%A5%E5%85%85%E8%AF%B4%E6%98%8E)
-  - [包的确认和重传](https://hellobug0.github.io/quic/%E5%8C%85%E7%A1%AE%E8%AE%A4%E5%92%8C%E9%87%8D%E4%BC%A0)
-  - [分包和可靠性](https://hellobug0.github.io/quic/%E5%88%86%E5%8C%85%E5%92%8C%E5%8F%AF%E9%9D%A0%E6%80%A7)
-  - [Nginx-包确认的处理](https://hellobug0.github.io/quic/Nginx-%E5%8C%85%E7%A1%AE%E8%AE%A4%E7%9A%84%E5%A4%84%E7%90%86)
-  - [Nginx-连接迁移的处理](https://hellobug0.github.io/quic/Nginx-%E8%BF%9E%E6%8E%A5%E8%BF%81%E7%A7%BB%E7%9A%84%E5%A4%84%E7%90%86)
+  - [连接迁移-Nginx](https://hellobug0.github.io/quic/%E8%BF%9E%E6%8E%A5%E8%BF%81%E7%A7%BB-Nginx)
+  - [包确认和重传](https://hellobug0.github.io/quic/%E5%8C%85%E7%A1%AE%E8%AE%A4%E5%92%8C%E9%87%8D%E4%BC%A0)
+  - [分包和可靠性-RFC9000](https://hellobug0.github.io/quic/%E5%88%86%E5%8C%85%E5%92%8C%E5%8F%AF%E9%9D%A0%E6%80%A7-RFC9000)
+  - [包确认-Nginx](https://hellobug0.github.io/quic/%E5%8C%85%E7%A1%AE%E8%AE%A4-Nginx)
+
     
