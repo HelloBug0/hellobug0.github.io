@@ -22,4 +22,5 @@ iptables规则匹配顺序：
 - PREROUTING链：raw表 (PREROUTING链) -> mangle表 (PREROUTING链) -> nat表 (PREROUTING链)
 - INPUT 链：mangle表 (INPUT链) -> nat表 (INPUT链) -> filter表 (INPUT链)
 - ...
+
 表内顺序匹配规则，匹配到即停止。
