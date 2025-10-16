@@ -1,6 +1,6 @@
 **ngx_event_process_init**    工作进程创建之后，调用该函数
     遍历所有的监听socket，将socket上的读事件的处理函数设置为`ngx_quic_recvmsg`
-    ```C
+```C
 #if (NGX_QUIC)
         } else if (ls[i].quic) {
             rev->handler = ngx_quic_recvmsg;
@@ -16,7 +16,7 @@
     c->data = hc;
     c->read->handler = ngx_http_wait_request_handler
     c->write->handler = ngx_http_empty_handler
-    ```C
+```C
 #if (NGX_HTTP_V3)
     if (hc->addr_conf->quic) {
         ngx_http_v3_init_stream(c);
