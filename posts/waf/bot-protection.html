@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WAF Bot 防护体系设计：构建分层协同的自动化流量防线</title>
+<style>
+  :root {
+    --text: #2b3440;
+    --heading: #1a2332;
+    --accent: #1f6feb;
+    --muted: #6b7686;
+    --border: #e3e8ef;
+    --code-bg: #f6f8fa;
+    --table-head: #f0f3f7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 20px 80px;
+    background: #ffffff;
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.85;
+  }
+  .container {
+    max-width: 820px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.75em;
+    color: var(--heading);
+    line-height: 1.4;
+    margin: 0 0 0.6em;
+    padding-bottom: 0.5em;
+    border-bottom: 2px solid var(--heading);
+  }
+  h2 {
+    font-size: 1.35em;
+    color: var(--heading);
+    margin: 2.2em 0 0.8em;
+    padding-left: 12px;
+    border-left: 4px solid var(--accent);
+    scroll-margin-top: 24px;
+  }
+  h3 {
+    font-size: 1.1em;
+    color: var(--heading);
+    margin: 1.8em 0 0.6em;
+  }
+  p { margin: 0.9em 0; }
+  ul, ol { padding-left: 1.6em; margin: 0.9em 0; }
+  li { margin: 0.35em 0; }
+  strong { color: var(--heading); }
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 2.5em 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.2em 0;
+    font-size: 0.95em;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: var(--table-head);
+    color: var(--heading);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  tr:nth-child(even) td { background: #fafbfc; }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 0.88em;
+    line-height: 1.7;
+  }
+  code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  p code, li code, td code {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.88em;
+  }
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+  }
+  blockquote {
+    margin: 1.2em 0;
+    padding: 12px 18px;
+    border-left: 4px solid var(--accent);
+    background: #f4f8ff;
+    color: var(--text);
+    border-radius: 0 6px 6px 0;
+  }
+  blockquote p { margin: 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .meta {
+    color: var(--muted);
+    font-size: 0.9em;
+    margin-bottom: 2em;
+  }
+  html { scroll-behavior: smooth; }
+  .page {
+    max-width: 1140px;
+    margin: 0 auto;
+    display: flex;
+    gap: 48px;
+    align-items: flex-start;
+  }
+  .toc {
+    width: 230px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 40px;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+    font-size: 0.88em;
+    border-left: 2px solid var(--border);
+  }
+  .toc-title {
+    font-weight: 600;
+    color: var(--heading);
+    padding: 4px 0 10px 16px;
+    font-size: 0.95em;
+  }
+  .toc a {
+    display: block;
+    color: var(--muted);
+    padding: 4px 0 4px 16px;
+    margin-left: -2px;
+    border-left: 2px solid transparent;
+    line-height: 1.5;
+  }
+  .toc a:hover {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    text-decoration: none;
+  }
+  @media (max-width: 1100px) {
+    .toc { display: none; }
+  }
+  /* 站点顶栏 */
+  .topbar {
+    max-width: 1140px;
+    margin: 0 auto 32px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.92em;
+  }
+  .topbar .site-name { font-weight: 600; color: var(--heading); }
+  .topbar a { color: var(--muted); }
+  .topbar a:hover { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="site-name">HelloBug0</span>
+  <a href="../../index.html">返回首页 →</a>
+</header>
+<div class="page">
+<nav class="toc">
+  <div class="toc-title">目录</div>
+  <a href="#intro">引言</a>
+  <a href="#sec1">1. 整体请求处理流程</a>
+  <a href="#sec2">2. 访问策略路由</a>
+  <a href="#sec3">3. 风险评估模块</a>
+  <a href="#sec4">4. 关键页面防护</a>
+  <a href="#sec5">5. 频率访问控制</a>
+  <a href="#sec6">6. 自定义规则</a>
+  <a href="#sec7">7. 合法爬虫白名单</a>
+  <a href="#sec8">8. 自动化工具指纹库</a>
+  <a href="#sec9">9. 可运营性</a>
+  <a href="#sec10">10. 模块协同与数据流</a>
+  <a href="#ending">结语</a>
+</nav>
+<div class="container">
+
+<h1>WAF Bot 防护体系设计：构建分层协同的自动化流量防线</h1>
+
+<h2 id="intro">引言</h2>
+
+<p>互联网流量中，自动化程序（Bot）的占比持续攀升。除了搜索引擎等良性爬虫，恶意爬虫、漏洞扫描器、撞库工具、CC 攻击脚本等恶意自动化流量，正在消耗服务器资源、窃取内容数据、探测攻击面。传统的 WAF Bot 防护往往以"单点插件"的形态存在：一个插件管频率、一个插件管挑战、一个插件管爬虫白名单，各自独立判断、独立处置，缺乏协同。这种架构存在几个典型问题：</p>
+
+<ul>
+  <li><strong>重复判断</strong>：每个插件各自做加白、加黑判断，逻辑分散且容易冲突</li>
+  <li><strong>无记忆能力</strong>：防护决策只看当前请求，客户端"这次被挑战、下次换 IP 再来"就能绕过</li>
+  <li><strong>处置单一</strong>：频率超限就封禁、命中就拦截，缺乏递进式的柔性处置手段</li>
+  <li><strong>误伤合法流量</strong>：搜索引擎爬虫被挑战页面挡住，影响站点 SEO</li>
+</ul>
+
+<p>本文介绍一种分层协同的 WAF Bot 防护体系设计，核心思路是六个转变：</p>
+
+<ol>
+  <li><strong>统一入口决策</strong>：引入访问策略路由，集中管理加白、加黑与模块调度，各防护模块不再独立承担这些职责</li>
+  <li><strong>风险量化驱动</strong>：引入风险评估模块，实时评分与行为评分叠加，用统一的"风险分"驱动处置决策</li>
+  <li><strong>合法爬虫身份认定独立成层</strong>：通过 rDNS 离线验证的 IP 白名单认定合法爬虫，跳过挑战与风险评估，但仍受频率约束</li>
+  <li><strong>离线行为分析联动</strong>：离线行为分析层消费访问日志，跨请求聚合分析后产出评分和处置结论，实时防护层直接读取执行——实现跨请求的"记忆"能力</li>
+  <li><strong>自动化工具指纹库</strong>：高置信度的恶意自动化工具的 TLS 指纹与浏览器指纹长期入库，命中即封禁，对方换 IP 也能持续识别</li>
+  <li><strong>频率控制递进惩罚</strong>：同一客户端多次触发时惩罚等级逐步加重（PoW → 验证码 → 拦截 → 封禁），替代静态单一动作</li>
+</ol>
+
+<hr>
+
+<h2 id="sec1">1. 整体请求处理流程</h2>
+
+<pre><code>请求进入
+  │
+  ▼
+访问策略路由
+  ├── Step 1: 检查 [all] 加白规则 → 命中则直接放行，终止后续所有处理
+  ├── Step 2: 检查加黑规则 → 命中则直接拦截（403），终止后续所有处理
+  └── Step 3: 检查部分模块加白规则，输出需要执行的防护模块列表（剔除被豁免的模块）
+  │
+  ▼
+合法爬虫白名单（已验证 IP 白名单匹配，rDNS 离线验证）
+  ├── 命中 → 跳过风险评估 + 关键页面防护，直接进入频率控制和自定义规则
+  └── 未命中 → 继续完整防护流程
+  │
+  ▼
+防护模块顺序执行（仅执行 Step 3 输出的列表）
+  ├── 风险评估模块
+  │     ├── 检查行为分析直接处置结论 → 命中则执行对应动作，终止后续
+  │     └── 实时评分 + 行为评分叠加 → 超过阈值则触发挑战，终止后续
+  ├── 关键页面防护模块
+  ├── 频率访问控制模块
+  └── 自定义规则模块</code></pre>
+
+<p>整个流程的设计要点：<strong>前置的决策都是低成本的内存匹配</strong>（白名单、黑名单、爬虫 IP 库），<strong>高成本的检测后置</strong>（挑战、评分计算），保证正常流量的处理开销最小。</p>
+
+<hr>
+
+<h2 id="sec2">2. 访问策略路由：统一的入口决策点</h2>
+
+<h3>2.1 职责</h3>
+
+<p>访问策略路由是请求的入口决策点，本身不执行防护逻辑，只做三件事：</p>
+
+<ul>
+  <li>加白规则的统一判断与放行</li>
+  <li>加黑规则的统一判断与拦截</li>
+  <li>输出当前请求需要执行的防护模块列表</li>
+</ul>
+
+<h3>2.2 加白规则</h3>
+
+<p>加白规则是三元组：<code>(维度, 值, 作用模块列表)</code>。</p>
+
+<p>支持的维度：</p>
+
+<table>
+  <thead>
+    <tr><th>维度</th><th>示例</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>IP / CIDR</td><td><code>10.0.0.0/8</code></td><td>内网 IP、已知合法出口</td></tr>
+    <tr><td>业务 Cookie</td><td>会话标识</td><td>源站 session cookie</td></tr>
+    <tr><td>WAF 验证 Cookie</td><td>签名令牌</td><td>已通过挑战验证的浏览器会话</td></tr>
+    <tr><td>API Token</td><td><code>Bearer xyz</code></td><td>已知合法 API 调用方</td></tr>
+    <tr><td>TLS 指纹（JA3/JA4）</td><td>指纹哈希</td><td>已知合法客户端工具</td></tr>
+  </tbody>
+</table>
+
+<p>也支持上述维度的组合，如 IP + TLS 指纹。</p>
+
+<p>语义规则：</p>
+
+<ul>
+  <li><strong>单条规则内部的多个维度为 AND 关系</strong>：所有维度同时命中该规则才生效（如 IP + TLS 指纹组合，防止单一维度被伪造后绕过）</li>
+  <li><strong>多条规则之间为 OR 关系</strong>：命中任意一条规则即按该规则的作用模块列表生效</li>
+  <li><strong>作用模块列表为 <code>[all]</code> 时</strong>直接放行，跳过后续所有处理（含加黑检查）</li>
+  <li><strong>作用模块列表为具体模块时</strong>，仅将这些模块从本次请求的执行列表中剔除，其余模块正常执行</li>
+  <li><strong>高价值豁免强制多因素</strong>：豁免风险评估、关键页面防护等核心模块的规则，必须配置至少两个维度的组合，禁止单维度（尤其是单 IP 或单 Cookie）豁免核心模块</li>
+  <li><strong>加白优先级最高</strong>，高于加黑规则、行为分析结论和评分，保证"加了白就一定放行"的语义</li>
+</ul>
+
+<h3>2.3 加黑规则</h3>
+
+<p>加黑规则结构：<code>(维度, 值, 有效期)</code>，维度与加白规则相同。</p>
+
+<ul>
+  <li><strong>存储</strong>：写入带 TTL 的黑名单存储。来源包括各防护模块的封禁动作（频率递进、自定义规则、关键页面检测失败、行为分析直接处置）及运营手动加黑</li>
+  <li><strong>生效</strong>：命中即在访问策略路由阶段直接返回 403，不进入后续防护流程</li>
+  <li><strong>冲突裁决</strong>：与加白规则同时命中时，仅 <code>[all]</code> 加白可覆盖加黑；部分模块豁免不影响加黑生效</li>
+</ul>
+
+<h3>2.4 模块执行列表</h3>
+
+<p>访问策略路由的最终输出是当前请求需要执行的防护模块列表：默认包含全部已启用模块，命中部分模块加白规则时将对应模块剔除。后续防护模块严格按列表顺序执行，未在列表中的模块不执行。</p>
+
+<hr>
+
+<h2 id="sec3">3. 风险评估模块：实时评分与行为评分叠加</h2>
+
+<h3>3.1 职责</h3>
+
+<p>风险评估模块作为防护流程中的第一个执行项，回答"这个客户端当前的风险级别是什么"，结论直接驱动后续动作。</p>
+
+<ul>
+  <li>输入：客户端标识（IP、TLS 指纹、Cookie 等）</li>
+  <li>输出：<code>{ action: block / challenge / observe / pass, score: N }</code></li>
+</ul>
+
+<h3>3.2 行为分析直接处置结论（最高优先级）</h3>
+
+<p>离线行为分析层对高置信度情况直接输出处置结论（不经过评分叠加），风险评估模块优先检查：</p>
+
+<table>
+  <thead>
+    <tr><th>结论类型</th><th>来源场景</th><th>输出动作</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>封禁（含有效期）</td><td>IP 多次命中蜜罐、爬虫集群成员</td><td>block，直接 403</td></tr>
+    <tr><td>强制挑战</td><td>评分中等但行为可疑</td><td>challenge，触发挑战</td></tr>
+    <tr><td>高度观察</td><td>弱信号积累</td><td>observe，提升评分基础分，进入后续流程</td></tr>
+  </tbody>
+</table>
+
+<p>有直接处置结论时，跳过评分叠加步骤，直接返回结论——<strong>高置信度结论不被实时评分稀释</strong>。</p>
+
+<h3>3.3 评分叠加机制</h3>
+
+<p><strong>实时评分</strong>：基于单次请求的多层信号（TCP 指纹、TLS 指纹、HTTP Header 特征、UA 交叉验证等），每次请求实时计算，反映当前请求的可疑程度。</p>
+
+<p><strong>行为评分</strong>：由离线行为分析层异步写入，反映该客户端标识的历史累计风险。</p>
+
+<p>叠加方式：</p>
+
+<pre><code>最终评分 = 行为评分（基础分）+ 实时评分（增量分）</code></pre>
+
+<p>评分映射到处置动作（阈值为可配置项，此处为默认值）：</p>
+
+<table>
+  <thead>
+    <tr><th>最终评分区间</th><th>处置动作</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>0 ~ 30</td><td>放行，进入后续防护流程</td></tr>
+    <tr><td>31 ~ 60</td><td>触发挑战（PoW）</td></tr>
+    <tr><td>61 ~ 80</td><td>触发挑战（验证码）</td></tr>
+    <tr><td>81 ~ 95</td><td>直接拦截（403）</td></tr>
+    <tr><td>96 ~ 100</td><td>封禁一段时间</td></tr>
+  </tbody>
+</table>
+
+<p><strong>行为评分衰减</strong>：行为评分带有效期，到期后基础分回零；不同风险等级对应不同的有效期，高风险的有效期更长。</p>
+
+<h3>3.4 挑战闭环</h3>
+
+<p>触发挑战后必须保证闭环，避免"通过挑战后下一个请求又被挑战"：</p>
+
+<ul>
+  <li><strong>挑战通过</strong>：清零该客户端的实时评分，写入签名加白 Cookie；挑战通过事件记录到访问日志，行为分析层消费后下调其行为评分</li>
+  <li><strong>挑战失败或超时</strong>：实时评分保留并累加，计入频率递进的触发次数，同时写入攻击日志——挑战失败是自动化工具的高置信度证据，行为分析层据此将其指纹写入指纹库（见 §8）</li>
+</ul>
+
+<h3>3.5 非浏览器请求分支</h3>
+
+<p>评分超阈值但请求被明确识别为非浏览器（无 TLS 浏览器指纹、无 Sec-Fetch 头等）时，不下发无法执行的 JS 挑战：</p>
+
+<table>
+  <thead>
+    <tr><th>非浏览器类型</th><th>处置</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>有鉴权头的 API 请求</td><td>不降维挑战，按评分映射执行 observe 或拦截</td></tr>
+    <tr><td>无鉴权请求</td><td>中低分返回 429 + Retry-After；高分直接 403 或封禁</td></tr>
+  </tbody>
+</table>
+
+<h3>3.6 封禁粒度</h3>
+
+<p>评分达到封禁区间时，封禁 key 为 <strong>IP + TLS 指纹组合</strong>（无法获取 TLS 指纹时退化为 IP），写入访问策略路由的加黑规则，封禁时长为可配置项。</p>
+
+<hr>
+
+<h2 id="sec4">4. 关键页面防护模块</h2>
+
+<h3>4.1 功能描述</h3>
+
+<p>针对配置的指定 URL（登录页、注册页、短信接口、秒杀接口等高价值目标）设置挑战，如验证码挑战、滑块挑战、机器人检测等。</p>
+
+<ul>
+  <li><strong>检测通过</strong>：写入签名加白 Cookie，有效期内后续请求携带此 Cookie 跳过挑战；同时清零实时评分</li>
+  <li><strong>检测失败</strong>：写入加黑规则，加黑期间直接拦截</li>
+</ul>
+
+<h3>4.2 触发条件</h3>
+
+<ul>
+  <li>请求 URL 命中配置的挑战 URL 列表</li>
+  <li>请求不携带有效的加白 Cookie</li>
+  <li>访问策略路由未加白当前客户端</li>
+</ul>
+
+<h3>4.3 非浏览器请求处理</h3>
+
+<p>命中挑战 URL 但明确识别为非浏览器请求时，不下发 JS 挑战，转为频率控制逻辑：</p>
+
+<table>
+  <thead>
+    <tr><th>非浏览器类型</th><th>处置</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>有鉴权头的 API 请求</td><td>放行，纳入正常频率统计</td></tr>
+    <tr><td>无鉴权头且公开接口</td><td>IP + TLS 指纹频率统计，超限返回 429 + Retry-After</td></tr>
+    <tr><td>无鉴权头且需鉴权接口</td><td>直接拦截</td></tr>
+  </tbody>
+</table>
+
+<h3>4.4 加白 Cookie 防伪设计</h3>
+
+<p>Cookie 值 = 客户端标识摘要 + 有效期 + HMAC 签名（服务端密钥），并绑定签发时的 TLS 指纹与 UA。校验时签名不符、已过期或客户端特征漂移均视为无效，防止伪造与转借。</p>
+
+<hr>
+
+<h2 id="sec5">5. 频率访问控制模块：递进惩罚机制</h2>
+
+<h3>5.1 统计维度</h3>
+
+<p>支持按以下维度或组合进行频率统计：</p>
+
+<table>
+  <thead>
+    <tr><th>客户端类型</th><th>推荐统计 key</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>浏览器</td><td>业务 Cookie；或 IP + WAF 验证 Cookie</td></tr>
+    <tr><td>非浏览器（有鉴权）</td><td>API Token</td></tr>
+    <tr><td>非浏览器（无鉴权）</td><td>IP + TLS 指纹（JA3/JA4）</td></tr>
+  </tbody>
+</table>
+
+<p>统计 key 由配置决定，未配置时按客户端类型自适应选择，支持多维度组合。</p>
+
+<h3>5.2 递进惩罚</h3>
+
+<p>同一客户端标识的触发次数作为递进依据。用户不配置时使用自适应递进，配置后按配置执行。</p>
+
+<p><strong>默认自适应递进（浏览器）：</strong></p>
+
+<table>
+  <thead>
+    <tr><th>触发次数</th><th>处置动作</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>第 1 次</td><td>PoW 挑战</td></tr>
+    <tr><td>第 2 次</td><td>验证码挑战</td></tr>
+    <tr><td>第 3 次</td><td>403</td></tr>
+    <tr><td>第 4 次及以上</td><td>封禁一段时间</td></tr>
+  </tbody>
+</table>
+
+<p><strong>默认自适应递进（非浏览器）：</strong></p>
+
+<table>
+  <thead>
+    <tr><th>触发次数</th><th>处置动作</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>第 1~2 次</td><td>429 + Retry-After 头</td></tr>
+    <tr><td>第 3 次及以上</td><td>封禁一段时间</td></tr>
+  </tbody>
+</table>
+
+<h3>5.3 状态设计：两类计数器分离</h3>
+
+<p>递进机制依赖两类语义不同的计数器，必须分开存储：</p>
+
+<ul>
+  <li><strong>频率统计计数</strong>：记录当前时间窗口内的访问次数，有效期等于统计时间窗口，窗口结束后自动清零</li>
+  <li><strong>触发次数计数</strong>：记录该客户端已被惩罚的历史次数，有效期较长（如 24 小时），作为递进等级的依据</li>
+</ul>
+
+<h3>5.4 与指纹库联动，防止惩罚被"洗白"</h3>
+
+<p>触发次数到期清零仅适用于普通客户端。同一客户端在触发次数有效期内达到最高惩罚等级（封禁）后再次触发频率上限的，将该事件写入攻击日志，由行为分析层裁决后将其 TLS 指纹 + 浏览器指纹写入自动化工具指纹库，由长期记忆接管——避免恶意客户端靠"等 TTL 过期"把惩罚等级重置回零。</p>
+
+<hr>
+
+<h2 id="sec6">6. 自定义规则模块</h2>
+
+<p>根据请求特征执行用户配置的动作。</p>
+
+<h3>6.1 匹配条件</h3>
+
+<p>支持对以下请求字段进行条件组合（AND / OR）：</p>
+
+<ul>
+  <li>URI、Query String、请求方法</li>
+  <li>HTTP Header（指定 Header 名和值）</li>
+  <li>IP / CIDR</li>
+  <li>UA</li>
+</ul>
+
+<h3>6.2 执行动作</h3>
+
+<table>
+  <thead>
+    <tr><th>动作</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>告警</td><td>写入攻击日志，不拦截</td></tr>
+    <tr><td>拦截</td><td>直接返回 403</td></tr>
+    <tr><td>封禁一段时间</td><td>写入黑名单，有效期内直接拦截</td></tr>
+    <tr><td>挑战</td><td>触发挑战</td></tr>
+  </tbody>
+</table>
+
+<hr>
+
+<h2 id="sec7">7. 合法爬虫白名单：基于 rDNS 的身份认定</h2>
+
+<h3>7.1 定位</h3>
+
+<p>合法爬虫白名单是对已知合法搜索引擎爬虫的身份认定机制。谷歌、Bing 等主流搜索引擎会公开其爬虫的 IP 地址段，且均支持 rDNS 反查验证。命中白名单的请求跳过关键页面防护和风险评估，但仍然进入频率访问控制和自定义规则模块——<strong>身份合法不等于可以为所欲为</strong>。</p>
+
+<h3>7.2 识别方式</h3>
+
+<table>
+  <thead>
+    <tr><th>验证手段</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>rDNS 反查（主验证）</td><td>对 IP 做反向 DNS 查询，校验域名属于搜索引擎官方域（如 <code>*.googlebot.com</code>、<code>*.search.msn.com</code>），再做正向解析确认指回该 IP。这是搜索引擎官方推荐的验证方式，无法被伪造</td></tr>
+    <tr><td>IP 地址白名单</td><td>经 rDNS 验证后的爬虫 IP 段/地址入库，主流程仅做内存匹配；同时支持用户手动添加自定义 IP 白名单</td></tr>
+    <tr><td>TLS 指纹（JA3/JA4，辅助）</td><td>各搜索引擎爬虫工具有相对固定的指纹。但 JA3/JA4 伪造门槛低，仅作辅助信号记录，不参与实时认定</td></tr>
+  </tbody>
+</table>
+
+<p><strong>关键设计：rDNS 不在请求主流程执行。</strong> DNS 查询延迟不可控，实时反查会拖慢主流程，因此 rDNS 验证全部离线/异步完成：</p>
+
+<table>
+  <thead>
+    <tr><th>爬虫类型</th><th>验证时机</th><th>主流程行为</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>已公开 IP 段（Google、Bing 等）</td><td><strong>白名单更新时验证</strong>：定期同步官方 IP 段后做 rDNS 反查确认归属，通过的标记为"已验证"入库</td><td>仅做 IP 白名单内存匹配，命中即认定</td></tr>
+    <tr><td>未公开 IP 段（百度等）</td><td><strong>异步验证</strong>：UA 声称是爬虫但 IP 未命中白名单时，将该 IP 投入异步验证队列，rDNS 通过后加入白名单（带有效期）</td><td>首次请求不阻塞、按常规防护处理；验证通过后后续请求命中白名单</td></tr>
+    <tr><td>用户自定义 IP</td><td><strong>录入时验证一次</strong>，防止配置错误</td><td>同已验证白名单</td></tr>
+  </tbody>
+</table>
+
+<h3>7.3 常见爬虫的验证来源</h3>
+
+<table>
+  <thead>
+    <tr><th>爬虫</th><th>验证来源</th><th>备注</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Googlebot</td><td>官方公开 IP 段 + rDNS（<code>*.googlebot.com</code>）</td><td>定期自动同步</td></tr>
+    <tr><td>Bingbot</td><td>微软公开 IP 段 + rDNS（<code>*.search.msn.com</code>）</td><td>定期自动同步</td></tr>
+    <tr><td>Baiduspider</td><td>rDNS（<code>*.baidu.com</code> / <code>*.baidu.jp</code>）</td><td>未公开完整 IP 段，经异步 rDNS 验证入库</td></tr>
+  </tbody>
+</table>
+
+<h3>7.4 作用范围</h3>
+
+<table>
+  <thead>
+    <tr><th>模块</th><th>是否执行</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>风险评估模块</td><td>跳过</td><td>已认定为合法身份，无需评分</td></tr>
+    <tr><td>关键页面防护模块</td><td>跳过</td><td>爬虫不能执行 JS 挑战</td></tr>
+    <tr><td>频率访问控制模块</td><td>执行</td><td>合法爬虫也需遵守频率上限</td></tr>
+    <tr><td>自定义规则模块</td><td>执行</td><td>用户可对爬虫配置额外限制或放行规则</td></tr>
+  </tbody>
+</table>
+
+<h3>7.5 白名单维护</h3>
+
+<ul>
+  <li><strong>内置白名单</strong>：定期从各搜索引擎官方接口自动同步 IP 段，同步后自动执行 rDNS 验证，无需用户配置</li>
+  <li><strong>异步验证白名单</strong>：未公开 IP 段的爬虫经异步 rDNS 验证通过后自动加入，带有效期，过期后需重新验证</li>
+  <li><strong>用户自定义</strong>：支持手动添加额外的 IP 白名单，录入时执行一次 rDNS 验证</li>
+  <li><strong>局部关闭</strong>：用户可对具体站点关闭内置白名单，关闭后爬虫按常规防护处理</li>
+</ul>
+
+<hr>
+
+<h2 id="sec8">8. 自动化工具指纹库：跨请求的长期记忆</h2>
+
+<h3>8.1 定位</h3>
+
+<p>指纹库存储已确认的恶意自动化工具的客户端特征——覆盖恶意爬虫、漏洞扫描器（sqlmap、AWVS、Nessus、dirsearch 等）、渗透利用与撞库工具——供实时层在每次请求时比对。</p>
+
+<p>此类工具的特点是"<strong>换 IP 不换 TLS 栈</strong>"：攻击者可以轻易切换代理池，但不会轻易重写自己的工具程序，因此 TLS 指纹比 IP 稳定得多。指纹入库后，可在扫描侦察阶段即识别拦截，实现防护前移。</p>
+
+<p><strong>库中仅保存高置信度指纹，命中即封禁</strong>；低置信度信号不入库，走行为评分与挑战确认通道。</p>
+
+<h3>8.2 入库来源</h3>
+
+<p>指纹库仅保存高置信度指纹。实时层（蜜罐、规则引擎）<strong>不直接写入指纹库</strong>，只写攻击日志；入库统一由行为分析层分析攻击日志后裁决，避免规则误报直接污染指纹库。</p>
+
+<table>
+  <thead>
+    <tr><th>来源</th><th>链路</th><th>写入内容</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>行为分析层确认（主入口）</td><td>消费攻击日志（蜜罐命中、规则命中、挑战失败记录），跨请求聚合后判定为高置信度</td><td>TLS 指纹 + 浏览器指纹 + IP，长期入库</td></tr>
+    <tr><td>内置工具指纹（预置）</td><td>厂商维护的已知扫描器/自动化工具 JA3/JA4 库，经人工验证</td><td>TLS 指纹 + 默认处置动作，开箱即可识别</td></tr>
+    <tr><td>人工录入</td><td>支持安全运营团队手动确认</td><td>任意维度</td></tr>
+  </tbody>
+</table>
+
+<h3>8.3 入库维度与有效期</h3>
+
+<table>
+  <thead>
+    <tr><th>维度</th><th>有效期</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>TLS 指纹（JA3/JA4）</td><td>长期（数周~数月）</td><td>识别同一套工具程序，换 IP 仍有效</td></tr>
+    <tr><td>浏览器指纹</td><td>长期（数周~数月）</td><td>识别同一台设备</td></tr>
+    <tr><td>IP</td><td>中期（数小时~1天）</td><td>作为辅助维度随指纹条目入库，代理池轮换后失效</td></tr>
+  </tbody>
+</table>
+
+<p>Session 与纯 IP 的短期封禁由实时层直接执行（写入加黑规则），用于立即止血、覆盖行为分析层的延迟窗口，不经指纹库。</p>
+
+<p>两个重要的边界原则：</p>
+
+<ul>
+  <li>JA3/JA4 标识的是 TLS 栈而非具体工具。主流浏览器与常见 HTTP 库（如 Chrome、python-requests）的高基数指纹<strong>不单独作为入库处置依据</strong>，必须与浏览器指纹或 IP 组合，否则会把正常用户一起封掉</li>
+  <li>TCP 指纹和 HTTP Header 特征区分度低，不作为入库标识，仅用于实时评分的辅助信号</li>
+</ul>
+
+<h3>8.4 匹配与处置</h3>
+
+<p>风险评估模块在每次请求时比对指纹库：</p>
+
+<pre><code>TLS 指纹命中指纹库 → 直接处置（按入库时记录的处置动作）
+浏览器指纹命中指纹库 → 直接处置
+Session 命中 → 403
+IP 命中 → 403</code></pre>
+
+<p>库中指纹均为高置信度，命中即封禁——<strong>对确认恶意的自动化工具不下发挑战</strong>（它也不会执行挑战），直接拦截，不浪费资源。</p>
+
+<h3>8.5 指纹入库的裁决流程</h3>
+
+<p>完整链路：</p>
+
+<pre><code>实时层事件（蜜罐命中 / 规则引擎命中 / 挑战失败）
+  → 写入攻击日志（同时对当前 Session + IP 短期封禁止血，覆盖分析延迟窗口）
+  → 行为分析层消费攻击日志，跨请求聚合分析
+      ├── 高置信度 → 写入指纹库（长期），命中即封禁
+      └── 低置信度 → 写入行为评分，按评分触发挑战
+                        ├── 挑战失败 → 写攻击日志 → 行为分析层确认 → 写入指纹库
+                        └── 挑战通过 → 行为评分下调，不入库</code></pre>
+
+<p>高置信度判定示例：</p>
+
+<ul>
+  <li>同一 IP 短时间内多次命中蜜罐</li>
+  <li>IP + TLS 指纹组合多次命中蜜罐或攻击规则</li>
+  <li>同一客户端短时间内大量探测敏感路径（大量 404 / 命中路径字典）→ 目录扫描行为</li>
+  <li>挑战失败（主动确认：无法完成挑战的客户端即为自动化工具）</li>
+</ul>
+
+<p>低置信度示例（仅提升行为评分，不入库）：单次规则命中、单一弱信号。</p>
+
+<hr>
+
+<h2 id="sec9">9. 可运营性</h2>
+
+<p>防护体系必须具备可运营性，否则误报无法收敛：</p>
+
+<ul>
+  <li><strong>拦截详情联合原因</strong>：每条拦截事件展示触发模块、客户端标识、联合触发原因描述，而不是简单一句"已拦截"</li>
+  <li><strong>一键加白 / 临时放行</strong>：从拦截日志直接操作，写入访问策略路由的加白规则</li>
+  <li><strong>观察模式</strong>：规则命中只记录不拦截，用于新规则试运行</li>
+  <li><strong>模块开关</strong>：每个防护模块可独立关闭，支持逐步排查误报</li>
+</ul>
+
+<p>访问策略路由的加白规则是可运营性的执行载体——运营界面的"一键加白"操作，最终写入的就是访问策略路由的加白规则配置。</p>
+
+<hr>
+
+<h2 id="sec10">10. 模块协同与数据流</h2>
+
+<pre><code>访问策略路由
+  ├── 读：加白规则配置
+  ├── 读：加黑规则（由各防护模块与运营写入）
+  └── 写：无（只读决策，不产生副作用）
+
+风险评估模块
+  ├── 读：行为分析直接处置结论（行为分析层写入）
+  ├── 读：行为评分（行为分析层写入）
+  ├── 读：自动化工具指纹库
+  ├── 计算：实时评分（多层信号，当场计算）
+  └── 写：无（只读计算，不产生副作用）
+
+合法爬虫白名单
+  ├── 读：已验证爬虫 IP 白名单（定期同步 + 异步验证补充）
+  ├── 读：内置爬虫 TLS 指纹库
+  ├── 计算：无（主流程仅内存匹配；rDNS 验证离线完成）
+  └── 写：待验证 IP 队列（供异步 rDNS 验证消费）
+
+关键页面防护 / 频率访问控制 / 自定义规则
+  ├── 读：访问策略路由输出的模块执行列表
+  └── 写：触发计数、封禁状态
+
+行为分析层（离线）
+  ├── 读：访问日志
+  ├── 读：攻击日志
+  └── 写：行为评分、直接处置结论、自动化工具指纹库
+
+自动化工具指纹库（仅高置信度，命中即封禁）
+  ├── 写：行为分析层（统一裁决入口）
+  ├── 写：预置工具指纹 / 人工录入
+  └── 读：风险评估模块（每次请求比对）</code></pre>
+
+<blockquote>
+  <p><strong>性能设计要点</strong>：风险评估每次请求需读取处置结论、行为评分、指纹库三类数据。工程实现上应对这三类数据做节点级本地缓存（秒级 TTL），并合并存储访问调用，将单请求的远端存储往返控制在最低限度，避免高 QPS 下共享存储成为瓶颈。</p>
+</blockquote>
+
+<hr>
+
+<h2 id="ending">结语</h2>
+
+<p>这套体系的核心思想可以概括为三点：</p>
+
+<ol>
+  <li><strong>决策前置、分层过滤</strong>：低成本的黑白名单和爬虫认定在最前面拦截大部分确定性流量，高成本的评分和挑战只作用于存疑流量</li>
+  <li><strong>实时与离线双轨协同</strong>：实时层负责毫秒级判断与立即止血，离线行为分析层负责跨请求聚合与长期记忆，两者通过评分、处置结论和指纹库衔接</li>
+  <li><strong>处置柔性递进</strong>：从放行、观察、挑战到拦截、封禁，惩罚力度与风险证据匹配，既不错杀正常用户，也不让恶意工具轻易"洗白"重来</li>
+</ol>
+
+<p>Bot 防护不是单一技术点的竞争，而是体系化能力的竞争——谁能把身份认定、风险量化、长期记忆和运营闭环串成一条线，谁就能在对抗中占据主动。</p>
+
+</div>
+</div>
+</body>
+</html>
