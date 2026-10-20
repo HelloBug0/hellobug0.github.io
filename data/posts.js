@@ -22,7 +22,7 @@ window.POSTS = [
     date: "2026-10-20",
     category: "Reth 源码阅读",
     tags: ["ECIES", "secp256k1", "RLPx", "ECDH"],
-    summary: "以太坊 RLPx 传输层加密模块 net/ecies 源码解析：secp256k1 椭圆曲线数学基础、ECIESStream 基于 Framed 与 Pin 的异步流设计、RLPx Auth-Ack 握手的报文字节布局与密钥派生全过程。",
+    summary: "以太坊 RLPx 传输层加密模块 net/ecies 源码解析：secp256k1 椭圆曲线数学基础、ECIESStream 基于 Framed 的异步流设计、RLPx Auth-Ack 握手的报文字节布局与密钥派生全过程。",
     url: "posts/reth/net-ecies.html"
   }
 ];
