@@ -16,5 +16,13 @@ window.POSTS = [
     tags: ["Bot 防护", "风险评分", "TLS 指纹"],
     summary: "从单点插件到分层协同：统一访问策略路由、实时与行为双轨评分、递进式频率惩罚、合法爬虫 rDNS 认定与自动化工具指纹库，构建完整的 Bot 防护体系。",
     url: "posts/waf/bot-protection.html"
+  },
+  {
+    title: "reth 源码阅读：net/ecies——ECIES 加密与 RLPx 握手",
+    date: "2026-10-20",
+    category: "Reth 源码阅读",
+    tags: ["ECIES", "secp256k1", "RLPx", "ECDH"],
+    summary: "以太坊 RLPx 传输层加密模块 net/ecies 源码解析：secp256k1 椭圆曲线数学基础、ECIESStream 基于 Framed 与 Pin 的异步流设计、RLPx Auth-Ack 握手的报文字节布局与密钥派生全过程。",
+    url: "posts/reth/net-ecies.html"
   }
 ];
