@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>reth 源码阅读：net/discv4——以太坊节点是如何互相找到的</title>
+<style>
+  :root {
+    --text: #2b3440;
+    --heading: #1a2332;
+    --accent: #1f6feb;
+    --muted: #6b7686;
+    --border: #e3e8ef;
+    --code-bg: #f6f8fa;
+    --table-head: #f0f3f7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 20px 80px;
+    background: #ffffff;
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.85;
+  }
+  .container {
+    max-width: 820px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.75em;
+    color: var(--heading);
+    line-height: 1.4;
+    margin: 0 0 0.6em;
+    padding-bottom: 0.5em;
+    border-bottom: 2px solid var(--heading);
+  }
+  h2 {
+    font-size: 1.35em;
+    color: var(--heading);
+    margin: 2.2em 0 0.8em;
+    padding-left: 12px;
+    border-left: 4px solid var(--accent);
+    scroll-margin-top: 24px;
+  }
+  h3 {
+    font-size: 1.1em;
+    color: var(--heading);
+    margin: 1.8em 0 0.6em;
+    scroll-margin-top: 24px;
+  }
+  p { margin: 0.9em 0; }
+  ul, ol { padding-left: 1.6em; margin: 0.9em 0; }
+  li { margin: 0.35em 0; }
+  strong { color: var(--heading); }
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 2.5em 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.2em 0;
+    font-size: 0.95em;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: var(--table-head);
+    color: var(--heading);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  tr:nth-child(even) td { background: #fafbfc; }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 0.88em;
+    line-height: 1.7;
+  }
+  code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  p code, li code, td code {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.88em;
+  }
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+  }
+  blockquote {
+    margin: 1.2em 0;
+    padding: 12px 18px;
+    border-left: 4px solid var(--accent);
+    background: #f4f8ff;
+    color: var(--text);
+    border-radius: 0 6px 6px 0;
+  }
+  blockquote p { margin: 0; }
+  blockquote p + p { margin-top: 0.6em; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .meta {
+    color: var(--muted);
+    font-size: 0.9em;
+    margin-bottom: 2em;
+  }
+  html { scroll-behavior: smooth; }
+  .page {
+    max-width: 1140px;
+    margin: 0 auto;
+    display: flex;
+    gap: 48px;
+    align-items: flex-start;
+  }
+  .toc {
+    width: 230px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 40px;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+    font-size: 0.88em;
+    border-left: 2px solid var(--border);
+  }
+  .toc-title {
+    font-weight: 600;
+    color: var(--heading);
+    padding: 4px 0 10px 16px;
+    font-size: 0.95em;
+  }
+  .toc a {
+    display: block;
+    color: var(--muted);
+    padding: 4px 0 4px 16px;
+    margin-left: -2px;
+    border-left: 2px solid transparent;
+    line-height: 1.5;
+  }
+  .toc a:hover {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    text-decoration: none;
+  }
+  @media (max-width: 1100px) {
+    .toc { display: none; }
+  }
+  /* 站点顶栏 */
+  .topbar {
+    max-width: 1140px;
+    margin: 0 auto 32px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.92em;
+  }
+  .topbar .site-name { font-weight: 600; color: var(--heading); }
+  .topbar a { color: var(--muted); }
+  .topbar a:hover { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="site-name">HelloBug0</span>
+  <a href="../../index.html">返回首页 →</a>
+</header>
+<div class="page">
+<nav class="toc">
+  <div class="toc-title">目录</div>
+  <a href="#intro">引子：孤独节点的冷启动</a>
+  <a href="#sec1">第一层：Kademlia 路由表</a>
+  <a href="#sec2">第二层：六种 UDP 报文</a>
+  <a href="#sec3">第三层：节点发现的完整交互</a>
+  <a href="#ending">结语</a>
+</nav>
+<div class="container">
+
+<h1>深入理解 discv4：以太坊节点是如何互相找到的</h1>
+
+<p class="meta">源码：reth · crates/net/discv4 · 2026-11-07 · <strong>Reth 源码阅读</strong></p>
+
+<blockquote>
+  <p>本文基于 reth <code>crates/net/discv4/</code> 的实现整理，从数据结构、协议报文、交互流程三个层次，把一个陌生节点如何逐步"认识"整张网络讲清楚。</p>
+</blockquote>
+
+<hr>
+
+<h2 id="intro">引子：一个孤独节点的冷启动</h2>
+
+<p>以太坊是一张去中心化的网络。当一个全新的节点第一次接入时，它对外界几乎一无所知：不知道网络上有哪些节点在线，不知道它们的 IP 和端口，自然也无法和任何人通信。</p>
+
+<p>节点发现协议要解决的，正是这个"冷启动"问题——让一个孤立的节点从零开始，逐步认识网络中的其他成员，并把它们组织成一张可以随时查询的关系表。</p>
+
+<p>reth 中的 <code>net/discv4</code> 就是 Ethereum Discovery v4 协议的实现。用一句话概括它的职责：</p>
+
+<blockquote>
+  <p>通过 UDP 上的 Ping/Pong 报文维护一张 Kademlia 路由表，持续发现新的 peer，顺带探测本机的公网 IP，最终把节点表的变化以 <code>DiscoveryUpdate</code> 事件上报给上层网络模块。</p>
+</blockquote>
+
+<p>下面我们分三层来拆解它。</p>
+
+<hr>
+
+<h2 id="sec1">第一层：基石——Kademlia 路由表（KBucketsTable）</h2>
+
+<p>在讲协议报文之前，必须先理解承载它们的数据结构：<strong>KBucketsTable</strong>。整张路由表的本质，就是一个保存在堆上的动态数组（<code>Vec</code>）。</p>
+
+<h3>内存布局</h3>
+
+<ul>
+  <li>数组总共有 <strong>256 个元素</strong>，下标范围 <code>0 ~ 255</code>。</li>
+  <li>每个元素核心是一个<strong>列表</strong>：包含 <strong>16 个正式槽</strong>，外加 <strong>1 个候选槽</strong>。
+    <ul>
+      <li>正式槽用来存放已经确立关系的节点。</li>
+      <li>候选槽在节点发现过程中临时存放候选节点。</li>
+    </ul>
+  </li>
+  <li>数组下标不是随意分配的，而是由"该节点与当前节点（自己）之间的距离"计算得来。</li>
+</ul>
+
+<h3>距离是怎么算出来的：异或（XOR）</h3>
+
+<p>每个节点都有自己的 ID。两个节点之间的距离，就是把它们的 ID 做<strong>异或</strong>运算：不同的位为 <code>1</code>，相同的位为 <code>0</code>。</p>
+
+<p>异或结果天然表达了"接近程度"：如果两个数的高位相同、只有低位几位不同，异或结果就会很小——这个小值就是它们之间的距离。</p>
+
+<h3>从距离到数组下标：<code>log2</code> 向下取整</h3>
+
+<p>拿到距离之后，如何确定它落在数组的哪个下标？答案是：</p>
+
+<blockquote>
+  <p>对距离取以 2 为底的对数，再向下取整。</p>
+  <p>（注意：实际代码用的是<strong>位运算</strong>，而不是真的调用对数函数。）</p>
+</blockquote>
+
+<p>举几个例子就能看出规律：</p>
+
+<table>
+  <thead>
+    <tr><th>距离范围</th><th>数组下标</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>1</code></td><td><code>0</code></td></tr>
+    <tr><td><code>2、3</code></td><td><code>1</code></td></tr>
+    <tr><td><code>4、5、6、7</code></td><td><code>2</code></td></tr>
+    <tr><td><code>8 ~ 15</code></td><td><code>3</code></td></tr>
+  </tbody>
+</table>
+
+<p>距离的最大值是 <code>2²⁵⁶ − 1</code>，对它取 <code>log2</code> 得到一个介于 <code>255</code> 和 <code>256</code> 之间的值，向下取整正好是 <code>255</code>。所以：</p>
+
+<ul>
+  <li><strong>下标越大，代表距离当前节点越远。</strong></li>
+  <li>下标 <code>0</code> 的列表虽然有 16 个位置，但实际上最多只能放 <strong>1 个</strong>节点——也就是离自己最近的那个。</li>
+  <li>下标 <code>1</code> 最多放 2 个，下标 <code>2</code> 最多放 4 个，依此类推。</li>
+</ul>
+
+<p>这种"近处稀疏、远处稠密"的分布，正是 Kademlia 结构高效查找的关键：它让节点对近距离的邻居有更细的分辨率。</p>
+
+<hr>
+
+<h2 id="sec2">第二层：协议报文——六种 UDP 包</h2>
+
+<p>discv4 协议一共定义了六种报文，两两成对：<code>Ping/Pong</code>、<code>FindNode/Neighbors</code>、<code>EnrRequest/EnrResponse</code>。</p>
+
+<h3>1. Ping 包</h3>
+
+<pre><code>packet-data = [version, from, to, expiration, enr-seq ...]
+version = 4
+from = [sender-ip, sender-udp-port, sender-tcp-port]
+to = [recipient-ip, recipient-udp-port, 0]</code></pre>
+
+<ul>
+  <li><strong>version</strong>：固定取值 <code>4</code>，版本不匹配的包直接丢弃。</li>
+  <li><strong>expiration</strong>：UNIX 时间戳，表示过期时间。接收端收到包时要先判断是否过期，过期直接丢弃。</li>
+  <li><strong>enr-seq</strong>：一个单调递增的数值。当节点的 IP 地址、UDP 端口号、fork_id 发生变化时，它会递增。此字段可选，填的是<strong>自己节点</strong>的 enr-seq。</li>
+</ul>
+
+<p><code>from</code> 和 <code>to</code> 对应的结构体：</p>
+
+<pre><code>pub struct NodeEndpoint {
+    /// The IP address of the network endpoint. It can be either IPv4 or IPv6.
+    pub address: IpAddr,
+    /// The UDP port used for communication in the discovery protocol.
+    pub udp_port: u16,
+    /// The TCP port used for communication in the `RLPx` protocol.
+    pub tcp_port: u16,
+}</code></pre>
+
+<p><strong>收到 Ping 后该怎么做？</strong> 应当回复一个 Pong 包。此外，如果对方在过去 <strong>12 小时</strong>内没有发过任何包，那么在回复 Pong 之后还要再发一个 Ping，重新验证对方。</p>
+
+<p><strong>为什么 Ping 能验证对方？</strong> 通过对方响应的 Pong，我们可以确认两件事：</p>
+
+<ol>
+  <li>发送方的 IP 地址和端口号，与我发出 Ping 时的目标地址一致；</li>
+  <li>Pong 中记录的 Ping 哈希，与我发出的那个 Ping 的哈希一致。</li>
+</ol>
+
+<p>两者都对上，才能确认对方合法。</p>
+
+<h3>2. Pong 包</h3>
+
+<pre><code>packet-data = [to, ping-hash, expiration, enr-seq, ...]
+to = [recipient-ip, recipient-udp-port, 0]</code></pre>
+
+<ul>
+  <li><strong>ping-hash</strong>：对应 Ping 包的哈希值，用来告诉对方"Ping 的接收者"和"Pong 的发送者"是同一个节点。</li>
+  <li><strong>expiration</strong>：同 Ping，过期直接丢弃。</li>
+  <li><strong>enr-seq</strong>：与 Ping 中同名字段含义相同，只是这里填的是<strong>发送 Pong 的节点</strong>的值。</li>
+</ul>
+
+<h3>3. FindNode 包</h3>
+
+<pre><code>packet-data = [target, expiration, ...]</code></pre>
+
+<ul>
+  <li><strong>target</strong>：目标节点的公钥信息，记为目标节点 A。</li>
+  <li><strong>expiration</strong>：过期时间，过期直接丢弃。</li>
+</ul>
+
+<p>收到 FindNode 后需要回复 Neighbors，其中包含距离<strong>目标节点 A 最近的 16 个节点</strong>。但有个前提：必须先判断发送方是否<strong>经过验证</strong>，验证通过后才会发出 Neighbors。</p>
+
+<pre><code>pub struct FindNode {
+    /// The target node's ID, a 64-byte secp256k1 public key.
+    pub id: PeerId,
+    /// The expiration timestamp of the packet, an absolute UNIX time stamp.
+    pub expire: u64,
+}</code></pre>
+
+<h3>4. Neighbors 包</h3>
+
+<pre><code>packet-data = [nodes, expiration, ...]
+nodes = [[ip, udp-port, tcp-port, node-id], ...]</code></pre>
+
+<pre><code>pub struct Neighbours {
+    /// The list of nodes containing IP, UDP port, TCP port, and node ID.
+    pub nodes: Vec&lt;NodeRecord&gt;,
+    /// The expiration timestamp of the packet, an absolute UNIX time stamp.
+    pub expire: u64,
+}
+
+pub struct NodeRecord {
+    /// The Address of a node.
+    pub address: IpAddr,
+    /// UDP discovery port.
+    pub udp_port: u16,
+    /// TCP port of the port that accepts connections.
+    pub tcp_port: u16,
+    /// Public key of the discovery service
+    pub id: PeerId,
+}</code></pre>
+
+<h3>5. EnrRequest 包</h3>
+
+<pre><code>packet-data = [expiration]</code></pre>
+
+<p>顾名思义，这个请求就是为了拿到目标节点的 <strong>ENR</strong>（Ethereum Node Record）信息。一条 ENR 里包含：</p>
+
+<ul>
+  <li>enr-seq</li>
+  <li>IP 地址、TCP 端口号、UDP 端口号</li>
+  <li>fork-id</li>
+  <li>公钥信息</li>
+</ul>
+
+<p>这里有几个值得展开的点：</p>
+
+<ul>
+  <li><strong>IP 地址</strong>是公网地址；</li>
+  <li><strong>TCP 端口</strong>用于节点之间真正的消息交互；</li>
+  <li><strong>UDP 端口</strong>用于节点发现服务；</li>
+  <li><strong>fork-id</strong> 是区块链的分叉 ID。当共识规则或状态转换规则发生变化时，会产生硬分叉点——"硬"指的就是<strong>不向后兼容</strong>。</li>
+</ul>
+
+<p>fork-id 的结构为 <code>ForkId = (R_hash, R_next)</code>：</p>
+
+<ul>
+  <li><strong>R_hash</strong>：从创世块开始，对当前所处分叉点用 CRC32 算法计算出的数值；</li>
+  <li><strong>R_next</strong>：下一个分叉点的块号。</li>
+</ul>
+
+<p>如果两个节点的 ForkID 不兼容，它们是无法交互的。</p>
+
+<h3>6. EnrResponse 包</h3>
+
+<pre><code>packet-data = [request-hash, ENR]</code></pre>
+
+<ul>
+  <li><strong>request-hash</strong>：对应 EnrRequest 包的哈希值；</li>
+  <li><strong>ENR</strong>：节点的 ENR 信息。</li>
+</ul>
+
+<hr>
+
+<h2 id="sec3">第三层：动起来——节点发现的完整交互</h2>
+
+<p>理解了数据结构和报文，接下来看它们在运行时是怎么串起来的。</p>
+
+<h3>自己节点如何触发一次查找（Lookup）</h3>
+
+<p>有两条触发路径：</p>
+
+<ol>
+  <li>Discv4 实例发送 <code>Discv4Command::Lookup</code> 命令，<code>Discv4Service</code> 执行 <code>self.lookup_with()</code>；</li>
+  <li><code>Discv4Service</code> 在 <code>poll</code> 中，如果配置了 <code>enable_lookup</code>，也会周期性调用 <code>self.lookup_with</code>。</li>
+</ol>
+
+<h3>lookup_with 做了什么</h3>
+
+<p>这是整个发现流程的核心，步骤如下：</p>
+
+<ol>
+  <li>创建一个 <code>LookupContext</code>；</li>
+  <li>从 KBuckets 中筛选出符合条件的节点——<strong>已验证</strong>（最近 12 小时内回复过 Pong）、<strong>不处于 find_node 请求中</strong>、且<strong>距离目标节点最近的 16 个</strong>；</li>
+  <li>把这 16 个节点存进一个 <code>BTreeMap</code>：<strong>key 是距离，value 是 <code>QueryNode</code></strong>。这意味着同一个距离只会保留一个节点。</li>
+</ol>
+
+<pre><code>struct QueryNode {
+    record: NodeRecord,
+    queried: bool,   // 是否已经发送 find node 包
+    responded: bool, // 是否收到 neighbors 包
+}</code></pre>
+
+<ol start="4">
+  <li>从 BTreeMap 中找出<strong>尚未发送 find node</strong>（即 <code>queried == false</code>）的、最近的<strong>三个</strong>节点；</li>
+  <li>如果这一步没找到任何节点，<strong>并且</strong>整个 <code>Discv4Service</code> 中也没有正在等待响应的 find node，说明当前手上没有任何已验证节点——于是执行 <code>bootstrap</code>，从配置中拿到已知节点，发起验证；</li>
+  <li>如果找到了节点，就针对这最多三个节点，<strong>逐个检查是否可以发送 find node</strong>。</li>
+</ol>
+
+<p><strong>这里有个值得琢磨的问题：</strong> 上面筛出来的节点明明已经"已验证、不在途、<code>queried == false</code>"了，为什么不直接发 find node，还要再检查一次能不能发？</p>
+
+<p>因为有一种情况没被前面的条件覆盖：<strong>find node 已经发出去了，却迟迟收不到响应</strong>，这次 find node 就算失败了。失败的次数会被统计下来，一旦超过设定的阈值，就不再直接发 find node，而是改发 Ping 重新验证对方。</p>
+
+<p><strong>关于 BTreeMap 的一个关键认知：</strong> <code>Discv4Service</code> 实例全局只有一个，但每次调用 <code>lookup_with</code> 都会创建<strong>新的</strong> <code>LookupContext</code> 和<strong>新的</strong> <code>BTreeMap</code>。这是合理的——因为每次查找的目标节点 ID 可能不同，而 BTreeMap 存的是"到目标节点的距离"及其对应节点。</p>
+
+<p>这也顺带说明了一件事：<strong>KBuckets 里保存的节点，并不都是围绕自己找到的邻居</strong>，也可能是围绕其他目标节点找到的邻居。但无论如何，当一个节点被写进 KBuckets 时，它在动态数组中的下标，永远是按<strong>它与自己节点之间的距离</strong>计算的。</p>
+
+<h3>bootstrap 做了什么</h3>
+
+<p>很简单：把配置里的节点放进 kbuckets，然后发送 Ping 包，发送原因是 <code>PingReason::InitialInsert</code>。</p>
+
+<h3>收到 Ping 包时</h3>
+
+<ol>
+  <li>检查是否过期，过期直接丢弃；</li>
+  <li>如果该节点<strong>已经在</strong> KBuckets 的正式槽或候选槽里：
+    <ul>
+      <li><strong>2.1 已过期</strong>：响应 Pong，再发一个 Ping，原因 <code>PingReason::EstablishBond</code>；</li>
+      <li><strong>2.2 未过期</strong>：更新 KBuckets 中该节点的 <code>enr_seq</code>，响应 Pong，发送 find node；如果已有的 <code>enr_seq</code> 与 Ping 中的不同，或者原本就没有 <code>enr_seq</code>，则继续发送 enr_request；</li>
+    </ul>
+  </li>
+  <li>如果该节点<strong>不在</strong> KBuckets 里，则尝试插入：
+    <ul>
+      <li><strong>3.1 插入成功</strong>：响应 Pong，发送 Ping，原因 <code>PingReason::InitialInsert</code>；</li>
+      <li><strong>3.2 KBuckets 已满</strong>：响应 Pong，发送 Ping，原因 <code>PingReason::EstablishBond</code>。注意此时这个节点<strong>并没有进 kbuckets</strong>。后续对端响应 Pong 时，当前节点只会做一件事：把对方放进 <code>received_pongs</code> 表。<strong>只有在 <code>received_pongs</code> 表中的节点，当前节点才会对其响应 neighbors、enr response。</strong></li>
+    </ul>
+  </li>
+</ol>
+
+<h3>收到 Pong 包时</h3>
+
+<ol>
+  <li>检查是否过期，过期直接丢弃；</li>
+  <li>检查这是不是自己发出的 Ping 的响应，不是则直接丢弃；</li>
+  <li>把对方节点信息放进 <code>received_pongs</code> 表；</li>
+  <li>根据当初发送 Ping 的原因分别处理：
+    <ul>
+      <li><strong>4.1 <code>InitialInsert</code></strong>：更新对方在 KBuckets 中的状态、<code>enr_seq</code> 等信息；</li>
+      <li><strong>4.2 <code>EstablishBond</code></strong>：同上；</li>
+      <li><strong>4.3 <code>RePing</code></strong>：更新对方的 <code>enr_seq</code>，并根据 <code>enr_seq</code> 是否变化决定是否发送 enr_request；</li>
+      <li><strong>4.4 <code>Lookup</code></strong>：更新对方在 KBuckets 中的状态、<code>enr_seq</code>，并把该节点放进 <code>pending_lookup</code>。</li>
+    </ul>
+  </li>
+</ol>
+
+<p>当前节点会把发送 Pong 的节点放进 KBuckets，并标记为<strong>已验证</strong>。等到下一次触发 lookup 时，就可能找到这些节点，进而向它们发送 find node。</p>
+
+<blockquote>
+  <p><strong>小结：</strong> Ping/Pong 的作用一是保持 kbuckets 中节点的"有效"状态（类似心跳），二是携带 <code>enr_seq</code> 检查——一旦发现 <code>enr_seq</code> 更新了，就会触发 enr_request 的发送。</p>
+</blockquote>
+
+<h3>收到 FindNode 包时</h3>
+
+<ol>
+  <li>检查是否过期，过期直接丢弃；</li>
+  <li>检查对方是否已验证（是否在 <code>received_pongs</code> 表中）。若在，则从 KBuckets 中找出距离<strong>目标节点最近的、最多 16 个</strong>节点，把它们的信息发给对方。</li>
+</ol>
+
+<h3>收到 Neighbors 包时</h3>
+
+<ol>
+  <li>检查是否过期，过期直接丢弃；</li>
+  <li>如果不是自己发出的 find node 的响应，直接丢弃；</li>
+  <li>一个 find node 请求可能收到多个 Neighbors 包，如果这些包中的节点总数<strong>超过 16</strong>，直接返回；</li>
+  <li>判断包中的节点是否是黑名单节点，是则直接返回；</li>
+  <li>把节点加入 BTreeMap；</li>
+  <li>从 BTreeMap 中找出最近的、且没有 find node 在途的、最多三个节点：
+    <ul>
+      <li><strong>6.1</strong> 如果 KBuckets 中没有这个节点，就插入 KBuckets；插入成功则发送 Ping，原因 <code>PingReason::Lookup</code>；</li>
+      <li><strong>6.2</strong> 如果 KBuckets 中已有这个节点且已验证：向它发送 find node 的失败次数若<strong>超过配置的最大值</strong>，则改发 Ping（原因 <code>PingReason::Lookup</code>）；否则发送 find node。</li>
+    </ul>
+  </li>
+</ol>
+
+<h3>查找为什么一定会收敛</h3>
+
+<p>Neighbors 会触发新的 find node，find node 的响应 Neighbors 又会触发新的 find node——这个过程什么时候结束？</p>
+
+<p>答案藏在几条规则里：</p>
+
+<ul>
+  <li>发送 find node 之后，对应节点会被标记为 <code>queried</code>；下次再处理 Neighbors 时，这个节点<strong>不会重复</strong>发送 find node；</li>
+  <li>如果 find node 发出后没收到任何 Neighbors，失败次数 <code>+1</code>（记录在 kbuckets 中），超过阈值后就把该节点从 kbuckets 中删除；</li>
+  <li>只有在交互过程中<strong>持续发现距离目标更近的新节点</strong>时，才会不断发送 find node。</li>
+</ul>
+
+<p>而关键在于：<strong>节点到目标的距离范围是有限的（0 ~ 255），且同一个距离只保留一个节点。</strong> 空间有限、每轮都在向更近处收敛，所以这个过程最终一定会停下来——不再需要发送 find node。</p>
+
+<h3>收到 EnrRequest 包时</h3>
+
+<ol>
+  <li>判断当前客户端是否支持 eip868 协议，不支持直接丢包；</li>
+  <li>检查是否过期，过期直接丢弃；</li>
+  <li>检查发送方是否已在 <code>received_pongs</code> 表中——不在就说明没验证过，直接丢包；</li>
+  <li>发送 enr response，把自己的 ENR 信息发出去。</li>
+</ol>
+
+<h3>收到 EnrResponse 包时</h3>
+
+<ol>
+  <li>检查这是不是自己发出的 enr_request 的响应，不是则直接丢包；</li>
+  <li>检查带回的 enr_request 哈希值是否正确、公钥信息是否正确，不正确直接丢包；</li>
+  <li>取出 enr_response 中的 fork id，更新 kbuckets 中对应节点的 fork_id。</li>
+</ol>
+
+<hr>
+
+<h2 id="ending">结语</h2>
+
+<p>回头看，discv4 的设计其实非常克制：</p>
+
+<ul>
+  <li><strong>一张按距离分桶的路由表</strong>（KBucketsTable）负责组织所有已知节点，近处分辨率高、远处分辨率低；</li>
+  <li><strong>六种成对的 UDP 报文</strong>各司其职——Ping/Pong 负责验证与心跳，FindNode/Neighbors 负责逐步逼近目标，EnrRequest/EnrResponse 负责同步节点的完整档案；</li>
+  <li><strong>一套带收敛保证的查找流程</strong>，让节点能从少量 bootstrap 种子出发，像涟漪一样一圈圈扩散，最终稳定地找到离目标最近的一批节点。</li>
+</ul>
+
+<p>理解了这三层，也就理解了以太坊网络中一个陌生节点是如何从"一无所知"走向"广结善缘"的。</p>
+
+</div>
+</div>
+</body>
+</html>

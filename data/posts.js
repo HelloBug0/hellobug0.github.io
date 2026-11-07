@@ -32,5 +32,13 @@ window.POSTS = [
     tags: ["HTTP 状态码", "CDN", "WAF"],
     summary: "汇总 Cloudflare、腾讯云、知道创宇、阿里云、长亭科技等厂商的自定义非标准响应码，并从架构角度分析为什么 CDN 类产品使用大量非标准状态码，而纯 WAF 通常只用一个。",
     url: "posts/waf/proxy-status-codes.html"
+  },
+  {
+    title: "reth 源码阅读：net/discv4——以太坊节点是如何互相找到的",
+    date: "2026-11-07",
+    category: "Reth 源码阅读",
+    tags: ["discv4", "Kademlia", "节点发现", "UDP"],
+    summary: "从数据结构、协议报文、交互流程三个层次拆解 reth net/discv4 的实现：Kademlia 路由表、六种 UDP 报文，以及带收敛保证的节点发现查找流程。",
+    url: "posts/reth/net-discv4.html"
   }
 ];
