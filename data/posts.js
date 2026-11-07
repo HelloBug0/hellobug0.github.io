@@ -24,5 +24,13 @@ window.POSTS = [
     tags: ["ECIES", "secp256k1", "RLPx", "ECDH"],
     summary: "以太坊 RLPx 传输层加密模块 net/ecies 源码解析：secp256k1 椭圆曲线数学基础、RLPx Auth-Ack 握手的报文字节布局与密钥派生全过程。",
     url: "posts/reth/net-ecies.html"
+  },
+  {
+    title: "代理服务器的非标准 HTTP 状态码：CDN 与 WAF 的设计分野",
+    date: "2026-11-07",
+    category: "WAF 安全",
+    tags: ["HTTP 状态码", "CDN", "WAF"],
+    summary: "汇总 Cloudflare、腾讯云、知道创宇、阿里云、长亭科技等厂商的自定义非标准响应码，并从架构角度分析为什么 CDN 类产品使用大量非标准状态码，而纯 WAF 通常只用一个。",
+    url: "posts/waf/proxy-status-codes.html"
   }
 ];

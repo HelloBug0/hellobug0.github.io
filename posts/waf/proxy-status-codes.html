@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>代理服务器的非标准 HTTP 状态码：CDN 与 WAF 的设计分野</title>
+<style>
+  :root {
+    --text: #2b3440;
+    --heading: #1a2332;
+    --accent: #1f6feb;
+    --muted: #6b7686;
+    --border: #e3e8ef;
+    --code-bg: #f6f8fa;
+    --table-head: #f0f3f7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 20px 80px;
+    background: #ffffff;
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.85;
+  }
+  .container {
+    max-width: 820px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.75em;
+    color: var(--heading);
+    line-height: 1.4;
+    margin: 0 0 0.6em;
+    padding-bottom: 0.5em;
+    border-bottom: 2px solid var(--heading);
+  }
+  h2 {
+    font-size: 1.35em;
+    color: var(--heading);
+    margin: 2.2em 0 0.8em;
+    padding-left: 12px;
+    border-left: 4px solid var(--accent);
+    scroll-margin-top: 24px;
+  }
+  h3 {
+    font-size: 1.1em;
+    color: var(--heading);
+    margin: 1.8em 0 0.6em;
+  }
+  h4 {
+    font-size: 1em;
+    color: var(--heading);
+    margin: 1.4em 0 0.5em;
+  }
+  p { margin: 0.9em 0; }
+  ul, ol { padding-left: 1.6em; margin: 0.9em 0; }
+  li { margin: 0.35em 0; }
+  strong { color: var(--heading); }
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 2.5em 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.2em 0;
+    font-size: 0.95em;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: var(--table-head);
+    color: var(--heading);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  tr:nth-child(even) td { background: #fafbfc; }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 0.88em;
+    line-height: 1.7;
+  }
+  code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  p code, li code, td code {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.88em;
+  }
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+  }
+  blockquote {
+    margin: 1.2em 0;
+    padding: 12px 18px;
+    border-left: 4px solid var(--accent);
+    background: #f4f8ff;
+    color: var(--text);
+    border-radius: 0 6px 6px 0;
+  }
+  blockquote p { margin: 0; }
+  blockquote p + p { margin-top: 0.6em; }
+  blockquote ul { margin: 0.4em 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .meta {
+    color: var(--muted);
+    font-size: 0.9em;
+    margin-bottom: 2em;
+  }
+  html { scroll-behavior: smooth; }
+  .page {
+    max-width: 1140px;
+    margin: 0 auto;
+    display: flex;
+    gap: 48px;
+    align-items: flex-start;
+  }
+  .toc {
+    width: 230px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 40px;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+    font-size: 0.88em;
+    border-left: 2px solid var(--border);
+  }
+  .toc-title {
+    font-weight: 600;
+    color: var(--heading);
+    padding: 4px 0 10px 16px;
+    font-size: 0.95em;
+  }
+  .toc a {
+    display: block;
+    color: var(--muted);
+    padding: 4px 0 4px 16px;
+    margin-left: -2px;
+    border-left: 2px solid transparent;
+    line-height: 1.5;
+  }
+  .toc a:hover {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    text-decoration: none;
+  }
+  @media (max-width: 1100px) {
+    .toc { display: none; }
+  }
+  /* 站点顶栏 */
+  .topbar {
+    max-width: 1140px;
+    margin: 0 auto 32px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.92em;
+  }
+  .topbar .site-name { font-weight: 600; color: var(--heading); }
+  .topbar a { color: var(--muted); }
+  .topbar a:hover { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="site-name">HelloBug0</span>
+  <a href="../../index.html">返回首页 →</a>
+</header>
+<div class="page">
+<nav class="toc">
+  <div class="toc-title">目录</div>
+  <a href="#intro">引言</a>
+  <a href="#cloudflare">1. Cloudflare CDN</a>
+  <a href="#tencent">2. 腾讯云</a>
+  <a href="#knownsec">3. 知道创宇</a>
+  <a href="#aliyun">4. 阿里云 WAF</a>
+  <a href="#chaitin">5. 长亭科技（雷池）</a>
+  <a href="#summary">总结对比表</a>
+  <a href="#analysis">分析：CDN 与 WAF 的分野</a>
+  <a href="#appendix">附录：未配置域名请求</a>
+</nav>
+<div class="container">
+
+<h1>代理服务器的非标准 HTTP 状态码：CDN 与 WAF 的设计分野</h1>
+
+<h2 id="intro">引言</h2>
+
+<p>HTTP 状态码由 RFC 标准定义，取值范围为 100–599。但在 CDN、WAF、边缘加速等代理类产品的实际运行中，标准状态码往往不足以描述复杂的故障与安全场景，于是各厂商纷纷扩展出自己的<strong>非标准状态码</strong>。本文汇总了 Cloudflare、腾讯云、知道创宇、阿里云、长亭科技等主流厂商的自定义响应码使用情况，并从架构角度分析一个有意思的现象：<strong>为什么 CDN 类产品会使用大量非标准状态码，而纯 WAF 通常只用一个？</strong></p>
+
+<hr>
+
+<h2 id="cloudflare">一、Cloudflare CDN</h2>
+
+<p>Cloudflare 是自定义 HTTP 响应码最丰富的厂商，分为两大类。</p>
+
+<h3>1. 5xx 系列自定义状态码（直接作为 HTTP 状态码返回）</h3>
+
+<p>这些状态码均<strong>不在 RFC 标准中定义</strong>，是 Cloudflare 独有的，用于描述边缘节点与源站之间的特定故障场景：</p>
+
+<table>
+  <thead>
+    <tr><th>状态码</th><th>含义</th><th>触发场景</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>520</strong></td><td>Web Server Returns an Unknown Error</td><td>源站返回了空的、未知的或意外的响应</td></tr>
+    <tr><td><strong>521</strong></td><td>Web Server Is Down</td><td>源站拒绝来自 Cloudflare 的连接</td></tr>
+    <tr><td><strong>522</strong></td><td>Connection Timed Out</td><td>Cloudflare 与源站的 TCP 握手超时</td></tr>
+    <tr><td><strong>523</strong></td><td>Origin Is Unreachable</td><td>源站不可达（DNS 错误或源站宕机）</td></tr>
+    <tr><td><strong>524</strong></td><td>A Timeout Occurred</td><td>已建立 TCP 连接但源站响应超时</td></tr>
+    <tr><td><strong>525</strong></td><td>SSL Handshake Failed</td><td>Cloudflare 与源站的 TLS 握手失败</td></tr>
+    <tr><td><strong>526</strong></td><td>Invalid SSL Certificate</td><td>源站的 TLS 证书无效</td></tr>
+    <tr><td><strong>530</strong></td><td>Error 530</td><td>伴随 1xxx 错误一起返回</td></tr>
+  </tbody>
+</table>
+
+<p><strong>依据</strong>：Cloudflare 官方文档 <a href="https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/">Cloudflare 5xx errors</a>，最后更新于 2026-06-05。Wikipedia <a href="https://en.wikipedia.org/wiki/List_of_HTTP_status_codes">List of HTTP status codes</a> 也收录了这些非标准码并标注为 Cloudflare 专有。</p>
+
+<h3>2. 1xxx 系列内部错误码（不直接作为 HTTP 状态码）</h3>
+
+<p>Cloudflare 的 1xxx 错误码是<strong>内部错误码</strong>，出现在响应体中，但 HTTP 状态行返回的是标准 4xx/5xx 码。官方文档明确说明：</p>
+
+<blockquote>
+  <p>"HTTP errors such as 409, 530, 403, and 429 are returned in the HTTP status header of a response, while 1XXX errors appear in the HTML body of the response."</p>
+</blockquote>
+
+<p><strong>依据</strong>：</p>
+<ul>
+  <li><a href="https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/">Cloudflare 1xxx errors</a>，最后更新于 2026-04-23</li>
+  <li><a href="https://developers.cloudflare.com/fundamentals/reference/error-responses/">Cloudflare Error responses</a>，最后更新于 2026-05-05</li>
+</ul>
+
+<p>典型的映射关系：</p>
+
+<table>
+  <thead>
+    <tr><th>1xxx 错误码</th><th>含义</th><th>实际 HTTP 状态码</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1006-1008, 1106</td><td>IP 被封禁/访问拒绝</td><td>403</td></tr>
+    <tr><td>1015</td><td>频率限制</td><td>429</td></tr>
+    <tr><td>1001, 1016</td><td>DNS 解析错误</td><td>530</td></tr>
+    <tr><td>1012</td><td>访问拒绝</td><td>403</td></tr>
+    <tr><td>1200</td><td>缓存连接限制</td><td>429</td></tr>
+  </tbody>
+</table>
+
+<h4>1xxx 错误码在响应体中的承载方式</h4>
+
+<p>Cloudflare 通过 <strong>HTTP 内容协商（Content Negotiation）</strong> 机制，根据客户端请求中的 <code>Accept</code> 头选择响应格式，1xxx 错误码会嵌入到对应格式的响应体中：</p>
+
+<table>
+  <thead>
+    <tr><th>客户端发送的 Accept 头</th><th>返回格式</th><th>1xxx 错误码的承载方式</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>text/html</code></td><td>HTML 错误页面</td><td>嵌入在 HTML 页面正文中（如页面显示 "Error 1015: You are being rate limited"）</td></tr>
+    <tr><td><code>*/*</code>（浏览器默认值）</td><td>HTML 错误页面</td><td>同上</td></tr>
+    <tr><td>不发送 Accept 头</td><td>HTML 错误页面</td><td>同上</td></tr>
+    <tr><td><code>application/json</code></td><td>JSON 结构化响应</td><td>包含在 <code>error_code</code> 字段中（如 <code>"error_code": 1015</code>）</td></tr>
+    <tr><td><code>application/problem+json</code></td><td>RFC 9457 格式 JSON</td><td>包含在 <code>error_code</code> 字段中</td></tr>
+    <tr><td><code>text/markdown</code></td><td>Markdown 格式响应</td><td>包含在 YAML frontmatter 的 <code>error_code</code> 字段中</td></tr>
+  </tbody>
+</table>
+
+<p><strong>关键设计要点</strong>：普通浏览器访问时（发送 <code>Accept: */*</code> 或 <code>Accept: text/html</code>），用户看到的是排版好的 HTML 错误页面，1xxx 错误码以可见文本形式呈现在页面上，用户体验与常规错误页面一致。仅当 API 客户端等程序化调用方发送 <code>Accept: application/json</code> 时，才会收到结构化 JSON 响应。</p>
+
+<p><strong>依据</strong>：Cloudflare 官方文档 <a href="https://developers.cloudflare.com/fundamentals/reference/error-responses/">Error responses</a> 中的 Content negotiation 表格及 Response fields 章节。原文内容协商表如下：</p>
+
+<blockquote>
+  <table>
+    <thead>
+      <tr><th>Accept header sent</th><th>Response format</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>application/json</td><td>JSON (application/json; charset=utf-8)</td></tr>
+      <tr><td>application/problem+json</td><td>JSON (application/problem+json; charset=utf-8)</td></tr>
+      <tr><td>application/json, text/markdown;q=0.9</td><td>JSON (higher quality factor)</td></tr>
+      <tr><td>text/markdown</td><td>Markdown (text/markdown; charset=utf-8)</td></tr>
+      <tr><td>text/markdown, application/json</td><td>Markdown (equal quality, first-listed wins)</td></tr>
+      <tr><td>text/*</td><td>Markdown</td></tr>
+      <tr><td>text/html</td><td>HTML</td></tr>
+      <tr><td>*/*</td><td>HTML</td></tr>
+      <tr><td>Not set</td><td>HTML</td></tr>
+    </tbody>
+  </table>
+</blockquote>
+
+<hr>
+
+<h2 id="tencent">二、腾讯云</h2>
+
+<p>腾讯云旗下有三个产品涉及自定义状态码，且各自定义不同。</p>
+
+<h3>1. 腾讯云 WAF（独立产品，产品 ID 627）</h3>
+
+<p>腾讯云 WAF 独立产品默认拦截响应码为 <strong>403</strong>（标准码）。</p>
+
+<p><strong>依据</strong>：腾讯云 WAF 本地测试文档 <a href="https://cloud.tencent.com/document/product/627/18632">Web 应用防火墙步骤2：本地测试</a>——"返回 HTTP 拦截页面内容（如403 Forbidden状态码或WAF默认阻断页面）"。</p>
+
+<blockquote>
+  <p>腾讯云 WAF 独立产品未发现使用非标准状态码。</p>
+</blockquote>
+
+<h3>2. 腾讯云 EdgeOne（边缘安全加速平台，产品 ID 1552）</h3>
+
+<h4>自定义非标准状态码</h4>
+
+<table>
+  <thead>
+    <tr><th>状态码</th><th>含义</th><th>触发场景</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>566</strong></td><td>Web 防护-托管规则拦截</td><td>请求被 WAF 托管规则拦截时<strong>默认</strong>返回</td></tr>
+    <tr><td><strong>567</strong></td><td>安全防护拦截（除托管规则外）</td><td>请求被 WAF 其他安全防护规则拦截时<strong>默认</strong>返回</td></tr>
+    <tr><td><strong>499</strong></td><td>客户端主动断开连接</td><td>客户端在服务器响应完成前关闭连接（源自 nginx）</td></tr>
+    <tr><td><strong>520</strong></td><td>源站直接发送 RST 包</td><td>节点与源站建连后，源站直接发送 RST</td></tr>
+    <tr><td><strong>521</strong></td><td>TCP 建连阶段被拒绝</td><td>节点回源时，源站拒绝 TCP 连接</td></tr>
+    <tr><td><strong>522</strong></td><td>TCP 建连超时</td><td>节点回源时，TCP 握手超时</td></tr>
+    <tr><td><strong>523</strong></td><td>源站 DNS 解析失败/不可达</td><td>回源时源站不可达</td></tr>
+    <tr><td><strong>524</strong></td><td>源站响应超时</td><td>建连成功后源站响应超时</td></tr>
+  </tbody>
+</table>
+
+<p><strong>依据</strong>：腾讯云官方文档 <a href="https://cloud.tencent.com/document/product/1552/101095">异常状态码参考 - 边缘安全加速平台EO</a>。</p>
+
+<blockquote>
+  <p>注：腾讯云的 520-524 与 Cloudflare 的同编号状态码含义类似，都描述源站相关问题，但属于各自独立定义的体系。</p>
+</blockquote>
+
+<h3>3. 腾讯云 CDN（内容分发网络，产品 ID 228）</h3>
+
+<h4>自定义非标准状态码</h4>
+
+<p><strong>CDN 内部状态码</strong>（平台层面错误，直接返回给客户端）：</p>
+
+<table>
+  <thead>
+    <tr><th>状态码</th><th>含义</th><th>触发场景</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>0</strong></td><td>获取到响应前请求已结束</td><td>客户端过早主动断开请求，或回源失败</td></tr>
+    <tr><td><strong>423</strong></td><td>回环请求</td><td>回源跟随 301/302 配置、HTTPS 回源方式或源站 rewrite 导致请求循环</td></tr>
+    <tr><td><strong>499</strong></td><td>客户端主动断开连接</td><td>客户端在 CDN 节点响应前关闭连接</td></tr>
+    <tr><td><strong>509</strong></td><td>触发 CC 攻击被封禁</td><td>CC 攻击防护触发封禁</td></tr>
+    <tr><td><strong>514</strong></td><td>IP 访问限频/黑名单拒绝/未配置 HTTPS</td><td>CDN 控制台中 IP 限频、黑名单或 HTTPS 配置导致拒绝</td></tr>
+    <tr><td><strong>524/614</strong></td><td>触发平台访问过载</td><td>业务请求突发流量触发平台过载保护</td></tr>
+    <tr><td><strong>531</strong></td><td>HTTPS 回源域名解析错误</td><td>源站域名解析配置异常</td></tr>
+    <tr><td><strong>532</strong></td><td>HTTPS 回源站建连失败</td><td>源站 443 端口异常、证书问题或源站不可用</td></tr>
+    <tr><td><strong>533</strong></td><td>HTTPS 回源站连接超时</td><td>源站 443 端口异常或源站不可用</td></tr>
+    <tr><td><strong>537</strong></td><td>HTTPS 接受源站数据超时</td><td>源站响应数据超时</td></tr>
+    <tr><td><strong>538</strong></td><td>HTTPS SSL 握手失败</td><td>源站协议和算法不兼容</td></tr>
+    <tr><td><strong>539</strong></td><td>HTTPS 证书校验失败</td><td>源站证书过期或证书链不齐全</td></tr>
+    <tr><td><strong>540</strong></td><td>HTTPS 证书域名校验不通过</td><td>源站证书域名配置异常</td></tr>
+    <tr><td><strong>562</strong></td><td>HTTPS 建连失败</td><td>CDN 节点与客户端 HTTPS 建连失败</td></tr>
+    <tr><td><strong>563</strong></td><td>HTTPS 连接超时</td><td>CDN 节点与客户端 HTTPS 连接超时</td></tr>
+    <tr><td><strong>564</strong></td><td>HTTPS 回源失败</td><td>HTTP 回源时源站负载/带宽问题，或协议跟随回源时 443 端口/证书异常</td></tr>
+    <tr><td><strong>566</strong></td><td>WAF 拦截 / 防盗刷自动拦截</td><td>Web 攻击防护执行动作为拦截，或流量防盗刷自动拦截</td></tr>
+    <tr><td><strong>567</strong></td><td>节点接收文件时响应超时</td><td>回源拉取文件时源站响应超时</td></tr>
+  </tbody>
+</table>
+
+<p><strong>依据</strong>：</p>
+<ul>
+  <li>腾讯云官方文档 <a href="https://cloud.tencent.com/document/product/228/35909">状态码说明 - 内容分发网络CDN</a></li>
+  <li>腾讯云 CDN 防盗刷文档 <a href="https://cloud.tencent.com/document/product/228/111887">流量防盗刷配置</a>——"当客户端 IP 命中了 IP 特征库时，系统将自动拦截，响应 566 状态码"</li>
+</ul>
+
+<blockquote>
+  <p>注：</p>
+  <ul>
+    <li>腾讯云 CDN 的 531-540 系列专门用于细化 HTTPS 回源场景的错误，与 EdgeOne/Cloudflare 的 520-526 系列（源站错误细化）思路类似，但编号和含义完全不同。</li>
+    <li>腾讯云 CDN 的 566/567 与 EdgeOne 的 566/567 编号相同但含义不完全一致。CDN 的 567 表示"节点接收文件时响应超时"，而 EdgeOne 的 567 表示"安全防护拦截"。</li>
+    <li>状态码 614 不在标准 HTTP 状态码范围内（标准为 100-599），是腾讯云 CDN 的特殊扩展。</li>
+  </ul>
+</blockquote>
+
+<hr>
+
+<h2 id="knownsec">三、知道创宇（创宇盾/云防御平台）</h2>
+
+<h3>自定义非标准状态码</h3>
+
+<table>
+  <thead>
+    <tr><th>状态码</th><th>含义</th><th>触发场景</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>444</strong></td><td>网页禁止访问</td><td>非 80/443 端口的服务未配置 forward 转发规则</td></tr>
+    <tr><td><strong>521</strong></td><td>JS 挑战验证页面</td><td>超级防护-人机识别阶段返回 JS 代码要求客户端验证</td></tr>
+    <tr><td><strong>555</strong></td><td>CCERS 规则拦截</td><td>Web 攻击防护中 CCERS 规则执行动作为拦截</td></tr>
+    <tr><td><strong>556</strong></td><td>超级防护拦截</td><td>Web 攻击防护中超级防护执行动作为拦截</td></tr>
+    <tr><td><strong>499</strong></td><td>客户端主动断开连接</td><td>客户端在服务器尚未完成响应时主动关闭连接</td></tr>
+  </tbody>
+</table>
+
+<p>知道创宇同时也使用标准状态码：403（命中拦截规则）、400（非法请求）、502（网关错误）、504（连接源站超时）。</p>
+
+<p><strong>依据</strong>：知道创宇官方帮助文档 <a href="https://help.yunaq.com/faq/8155/index.html">状态码含义</a>——该页面明确列出了知道创宇自定义的状态码（444、521、555、556）与标准 HTTP 状态码。</p>
+
+<hr>
+
+<h2 id="aliyun">四、阿里云 WAF</h2>
+
+<h3>拦截响应码</h3>
+
+<p>阿里云 WAF <strong>默认使用标准 HTTP 状态码 405 (Method Not Allowed)</strong> 作为拦截响应码。虽然 405 是 RFC 标准中定义的（RFC 9110），但阿里云 WAF 将其用于安全拦截场景，这与其原始语义（HTTP 方法不被允许）并不一致。</p>
+
+<ul>
+  <li>支持自定义响应码范围：200~600</li>
+  <li><strong>明确禁止使用</strong>：204、304、600、498</li>
+  <li>滑块验证页面固定返回 200（不支持自定义）</li>
+  <li>如果用户将响应码设为 204 或 304，WAF 会回退使用默认 405</li>
+</ul>
+
+<p><strong>依据</strong>：阿里云官方文档 <a href="https://help.aliyun.com/zh/waf/web-application-firewall-3-0/user-guide/configure-custom-response-rules-to-configure-custom-block-pages">如何设置自定义响应配置拦截或滑块响应页面</a>——"默认拦截页面显示405错误码，提示'很抱歉，由于您访问的URL有可能对网站造成安全威胁，您的访问被阻断'"。</p>
+
+<blockquote>
+  <p>阿里云 WAF 产品本身未发现使用 RFC 标准之外的自定义响应码。但其自定义响应码中明确禁止使用 498，原因是 498 已被同属阿里云的边缘安全加速 ESA 产品的 WAF 组件内部占用（见下文）。</p>
+</blockquote>
+
+<h3>阿里云 ESA（边缘安全加速）中的非标准状态码</h3>
+
+<p>阿里云 WAF 产品本身未使用非标准码，但阿里云的<strong>边缘安全加速 ESA</strong>（CDN/边缘产品，内含 WAF 组件）使用了大量非标准状态码。文档明确指出："520~599 之间的状态码用于 ESA 对错误场景的细化，为防止混淆，建议您在业务中避免使用该范围内的状态码。"</p>
+
+<h4>安全相关</h4>
+
+<table>
+  <thead>
+    <tr><th>状态码</th><th>含义</th><th>触发场景</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>498</strong></td><td>Blocked for Security Throttling（安全限流拦截）</td><td>ESA 节点边缘 WAF 组件流量过载时触发强安全模式，强制拦截请求。文档原文："498 状态码是 ESA 产品对 HTTP 状态码的扩展，专门用于标识边缘安全模块（WAF）在强安全模式下的过载拦截场景。<strong>在标准 HTTP 协议中不存在此状态码。</strong>"</td></tr>
+  </tbody>
+</table>
+
+<h4>源站相关（520-526、530）</h4>
+
+<table>
+  <thead>
+    <tr><th>状态码</th><th>含义</th><th>触发场景</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>520</strong></td><td>Web server returns an unknown error</td><td>源站返回空的、未知的或意外的响应</td></tr>
+    <tr><td><strong>521</strong></td><td>Web server is down</td><td>源站拒绝来自 ESA 节点的连接</td></tr>
+    <tr><td><strong>522</strong></td><td>Connection timed out</td><td>ESA 节点与源站之间的连接超时</td></tr>
+    <tr><td><strong>523</strong></td><td>Origin is unreachable</td><td>ESA 节点无法连接源站</td></tr>
+    <tr><td><strong>524</strong></td><td>A timeout occurred</td><td>已连接源站但源站未在超时时间内响应</td></tr>
+    <tr><td><strong>525</strong></td><td>SSL handshake failed</td><td>ESA 节点与源站之间 SSL 握手失败</td></tr>
+    <tr><td><strong>526</strong></td><td>Invalid SSL certificate</td><td>ESA 节点无法验证源站 SSL 证书</td></tr>
+    <tr><td><strong>530</strong></td><td>Unable to resolve the origin hostname</td><td>ESA 节点无法解析源站主机名</td></tr>
+  </tbody>
+</table>
+
+<h4>边缘函数相关（581-584、594-596、598-599）</h4>
+
+<table>
+  <thead>
+    <tr><th>状态码</th><th>含义</th><th>触发场景</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>581</strong></td><td>Exceeding the maximum execution hop count</td><td>边缘函数循环调用超过最大执行跳数</td></tr>
+    <tr><td><strong>582</strong></td><td>Version retrieval failed</td><td>获取边缘函数版本信息失败</td></tr>
+    <tr><td><strong>583</strong></td><td>Rate limit</td><td>超过边缘函数处理上限，触发流量限制</td></tr>
+    <tr><td><strong>584</strong></td><td>Insufficient computing resources</td><td>ESA 节点计算资源不足</td></tr>
+    <tr><td><strong>594</strong></td><td>Uncaught exception</td><td>边缘函数脚本因未捕获异常而卡住</td></tr>
+    <tr><td><strong>595</strong></td><td>Execution time exceeds the limit</td><td>边缘函数执行时间超过最大允许时间（默认 120s）</td></tr>
+    <tr><td><strong>596</strong></td><td>Configuration pull failed</td><td>边缘函数配置拉取失败</td></tr>
+    <tr><td><strong>598</strong></td><td>Debugger exception</td><td>边缘函数调试器出现异常</td></tr>
+    <tr><td><strong>599</strong></td><td>Script execution exception</td><td>边缘函数脚本执行错误或资源超限</td></tr>
+  </tbody>
+</table>
+
+<h4>客户端相关</h4>
+
+<table>
+  <thead>
+    <tr><th>状态码</th><th>含义</th><th>触发场景</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>499</strong></td><td>Client Close Request</td><td>客户端在源站响应完成前主动关闭连接（源自 nginx 惯例）</td></tr>
+  </tbody>
+</table>
+
+<p><strong>依据</strong>：阿里云官方文档 <a href="https://help.aliyun.com/zh/edge-security-acceleration/esa/support/http-status-code-description">HTTP 状态码说明 - 边缘安全加速(ESA)</a>。</p>
+
+<blockquote>
+  <p>注：阿里云 ESA 的 520-526、530 与 Cloudflare 的同编号状态码含义基本一致，但属于各自独立定义的体系。</p>
+</blockquote>
+
+<hr>
+
+<h2 id="chaitin">五、长亭科技（雷池 SafeLine WAF）</h2>
+
+<h3>拦截响应码</h3>
+
+<p>长亭雷池 WAF <strong>使用标准 HTTP 状态码 403 (Forbidden)</strong> 作为默认拦截响应码。</p>
+
+<ul>
+  <li>社区版拦截时固定返回 403，早期版本不支持自定义拦截响应内容</li>
+  <li>后续版本增加了自定义拦截页面功能，但核心拦截状态码仍为 403</li>
+  <li>上游源站返回错误码时，自定义拦截页面不再对上游错误码生效</li>
+</ul>
+
+<p><strong>依据</strong>：长亭雷池官方产品文档 <a href="https://support.chaitin.cn/docs/line-67834be5/30/main/03/safeline30-e212ccffdc">雷池SafeLine 3.0 用户操作手册</a>——明确标注"拦截页面状态码: 403"。</p>
+
+<blockquote>
+  <p>长亭雷池 WAF 未发现使用 RFC 标准之外的自定义响应码的记录。</p>
+</blockquote>
+
+<hr>
+
+<h2 id="summary">总结对比表</h2>
+
+<table>
+  <thead>
+    <tr><th>厂商</th><th>默认拦截响应码</th><th>是否 RFC 标准</th><th>自定义非标准码</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>Cloudflare</strong></td><td>520-526（源站错误）、403/429（安全拦截）</td><td>520-526 均<strong>非标准</strong></td><td>520、521、522、523、524、525、526、530</td></tr>
+    <tr><td><strong>腾讯云 WAF</strong></td><td>403</td><td>标准</td><td>无</td></tr>
+    <tr><td><strong>腾讯云 EdgeOne</strong></td><td>566（托管规则）、567（其他防护）</td><td>均<strong>非标准</strong></td><td>566、567、499、520-524</td></tr>
+    <tr><td><strong>腾讯云 CDN</strong></td><td>566（WAF/防盗刷拦截）</td><td><strong>非标准</strong></td><td>0、423、499、509、514、524/614、531-540、562-567</td></tr>
+    <tr><td><strong>知道创宇</strong></td><td>403（普通拦截）</td><td>403 标准</td><td>444、521、555、556</td></tr>
+    <tr><td><strong>阿里云 WAF</strong></td><td>405</td><td>标准（但语义借用）</td><td>无</td></tr>
+    <tr><td><strong>阿里云 ESA</strong></td><td>498（安全限流）</td><td><strong>非标准</strong></td><td>498、499、520-526、530、581-584、594-596、598-599</td></tr>
+    <tr><td><strong>长亭雷池</strong></td><td>403</td><td>标准</td><td>无</td></tr>
+  </tbody>
+</table>
+
+<hr>
+
+<h2 id="analysis">分析：为什么 CDN 使用大量非标准状态码，而 WAF 通常只用一个？</h2>
+
+<h3>WAF 的故障空间很小</h3>
+
+<p>WAF 的工作本质是一个<strong>安全决策引擎</strong>，只有两种结果：</p>
+
+<ol>
+  <li><strong>放行</strong> → 请求透传给源站，源站的响应码原样返回客户端（WAF 不参与响应码生成）</li>
+  <li><strong>拦截</strong> → WAF 自己生成一个响应，告诉客户端"你被拦了"</li>
+</ol>
+
+<p>拦截只需要一个状态码就够了。不管是 SQL 注入、XSS 还是 CC 攻击，对客户端来说结果一样：请求被拒绝。所以一个 403 或 405 足矣。</p>
+
+<h3>CDN 的故障空间很大</h3>
+
+<p>CDN 是一个<strong>多层代理 + 缓存 + 协议终止 + 安全</strong>的复合系统，一条请求链路上有很多可能出错的环节：</p>
+
+<pre><code>客户端 → [TLS终止] → CDN边缘节点 → [缓存查找] → [回源DNS解析] → [回源TCP建连] → [回源TLS握手] → [回源HTTP请求] → 源站</code></pre>
+
+<p>每一个环节都可能独立失败，且失败原因各不相同：</p>
+
+<table>
+  <thead>
+    <tr><th>环节</th><th>可能的失败</th><th>需要不同的状态码区分（以腾讯云 CDN 为例）</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>TLS 终止（面向客户端）</td><td>握手失败、证书错误、连接超时</td><td>562、563</td></tr>
+    <tr><td>缓存查找</td><td>命中/未命中（不影响状态码）</td><td>—</td></tr>
+    <tr><td>回源 DNS 解析</td><td>域名解析失败</td><td>531</td></tr>
+    <tr><td>回源 TCP 建连</td><td>连接被拒、超时、RST</td><td>532、533</td></tr>
+    <tr><td>回源 TLS 握手</td><td>SSL 握手失败、证书过期、域名不匹配</td><td>538、539、540</td></tr>
+    <tr><td>回源 HTTP 请求</td><td>响应超时、数据接收超时</td><td>537、567</td></tr>
+    <tr><td>平台层面</td><td>过载保护、CC 封禁、限频</td><td>524/614、509、514</td></tr>
+    <tr><td>安全拦截</td><td>WAF 拦截、防盗刷</td><td>566</td></tr>
+  </tbody>
+</table>
+
+<h3>核心区别</h3>
+
+<p>CDN 的非标准码多，不是因为它"想"定义这么多，而是因为它运营的是一套分布式基础设施，需要告诉用户"到底哪个环节出了问题"：</p>
+
+<ul>
+  <li>运维人员看到 538 就知道是 SSL 握手问题，看到 531 就知道是 DNS 解析问题——不需要去翻日志</li>
+  <li>监控系统可以根据不同状态码配置不同的告警策略和重试逻辑（DNS 错误可能需要切源站，SSL 错误需要更新证书）</li>
+</ul>
+
+<p>WAF 的非标准码少，是因为它只需要回答一个问题：拦还是不拦。拦了就返回一个统一的状态码，至于为什么拦（SQL 注入还是 XSS），那是日志和告警系统的事，不需要体现在 HTTP 状态码里。</p>
+
+<h3>规律总结</h3>
+
+<p>从上述各厂商的数据中可以看到一个规律：<strong>越接近"基础设施运营"的产品，自定义非标准码越多；越接近"纯安全决策"的产品，自定义非标准码越少。</strong></p>
+
+<table>
+  <thead>
+    <tr><th>产品类型</th><th>非标准码数量</th><th>原因</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>腾讯云 CDN（纯 CDN）</td><td>18 个</td><td>全链路故障细化</td></tr>
+    <tr><td>阿里云 ESA（CDN+WAF）</td><td>17 个</td><td>CDN 基础设施 + 边缘函数</td></tr>
+    <tr><td>腾讯云 EdgeOne（CDN+WAF）</td><td>8 个</td><td>CDN 基础设施</td></tr>
+    <tr><td>Cloudflare（CDN+WAF）</td><td>8 个（5xx 系列）</td><td>源站连接故障细化</td></tr>
+    <tr><td>知道创宇（WAF+抗D）</td><td>4 个</td><td>安全拦截为主</td></tr>
+    <tr><td>阿里云 WAF（纯 WAF）</td><td>0 个</td><td>纯安全决策</td></tr>
+    <tr><td>腾讯云 WAF（纯 WAF）</td><td>0 个</td><td>纯安全决策</td></tr>
+    <tr><td>长亭雷池（纯 WAF）</td><td>0 个</td><td>纯安全决策</td></tr>
+  </tbody>
+</table>
+
+<blockquote>
+  <p><strong>结论：非标准码的数量与产品承担的"基础设施复杂度"正相关，与"安全决策"本身无关。</strong></p>
+</blockquote>
+
+<hr>
+
+<h2 id="appendix">附录：WAF 收到未配置域名请求时的响应码</h2>
+
+<p>当 WAF 收到一个 Host 头为其未接入/未配置域名的请求时，各厂商的响应码如下：</p>
+
+<table>
+  <thead>
+    <tr><th>厂商</th><th>响应码</th><th>说明</th><th>依据</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>阿里云 WAF</strong></td><td><strong>410</strong></td><td>WAF 返回 410 页面，提示"该域名对应的协议和端口未接入 WAF"。410 是 RFC 标准码（Gone），但此处语义借用——原义是"资源已永久消失"，实际含义是"域名未在 WAF 中配置"</td><td><a href="https://help.aliyun.com/zh/waf/how-to-troubleshoot-website-access-exceptions">网站访问异常时如何排查</a>——"没有在WAF上配置相关域名，或者没有配置相关端口...此时WAF会返回410页面"</td></tr>
+    <tr><td><strong>腾讯云 WAF</strong></td><td>未找到官方文档说明</td><td>—</td><td>—</td></tr>
+    <tr><td><strong>知道创宇</strong></td><td>未找到官方文档说明</td><td>—</td><td>—</td></tr>
+    <tr><td><strong>长亭雷池</strong></td><td>未找到官方文档说明</td><td>—</td><td>—</td></tr>
+    <tr><td><strong>安恒 SaaS WAF</strong></td><td>未找到官方文档说明</td><td>—</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<blockquote>
+  <p>注：对于未在公开文档中说明的厂商，如需确认实际行为，可通过向 WAF 发送 Host 头为未接入域名的请求进行实测验证。</p>
+</blockquote>
+
+</div>
+</div>
+</body>
+</html>
